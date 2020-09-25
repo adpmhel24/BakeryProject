@@ -1,9 +1,9 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, json
 from bakery_app import db
-from bakery_app.inventory.models import Items, ItemGroup, UnitOfMeasure
+from bakery_app.inventory.models import (Items, ItemGroup, UnitOfMeasure,
+        ItemPrice)
 
 inventory = Blueprint('inventory', __name__)
-
 
 @inventory.route('/api/inv/item/create', methods=['POST'])
 def create_item():
@@ -21,7 +21,7 @@ def create_item():
            f"Invalid uom name '{uom}'!"}})
 
     elif Items.query.filter_by(item_name=item_code).first():
-        return jsonify({'success':'false', 'status':{'code':2, 'description': \
+        return jsonify({'success':'false', 'status':{'code':3, 'description': \
             f"This item code '{item_code}' is already exists."}})
 
     item = Items(item_code=item_code, item_name=item_name, item_group=group, uom=uom)
@@ -37,7 +37,7 @@ def create_itemgroup():
 
     if ItemGroup.query.filter_by(name=name).first():
         return jsonify({'success':'false', 'status':{'code':3, 'description': \
-           f"This item group name is already exists."}})
+           f"This item group name '{name}' is already exists."}})
 
     group = ItemGroup(name=name, description=description)
     db.session.add(group)
@@ -57,3 +57,30 @@ def create_uom():
     db.session.add(uom)
     db.session.commit()
     return jsonify({'success':'true', 'status':{'code':1, 'description': 'Added successfully'}})
+
+
+@inventory.route('/api/inv/item_price/create', methods=['POST'])
+def create_price():
+    item_code = request.args.get('item_code')
+    price = request.args.get('price')
+    item = Items.query.filter_by(item_code=item_code).first()
+    if not item:
+        return jsonify({'success':'false', 'status':{'code':2, 'description': \
+           f"Invalid item code '{item_code}'!"}})
+    # elif item and ItemPrice.query.join(ItemPrice.price).filter_by(price=price).first():
+    elif ItemPrice.query.filter_by(item_code=item_code, price=price).first():
+        return jsonify({'success':'false', 'status':{'code':3, 'description': \
+           f"Item code '{item_code}' and '{price}' is already exists!"}})
+    
+    price = ItemPrice(item_code=item_code, price=price)
+    db.session.add(price)
+    db.session.commit()
+    return jsonify({'success':'true', 'status':{'code':1, 'description': 'Added successfully'}})
+
+
+@inventory.route('/api/inv/get_items', methods=['GET'])
+def get_items():
+    items = Items.query.filter(ItemPrice.tblitems('BUNNYSAL'))
+    for i in items:
+        return items.item_code
+    # return items.item_code
