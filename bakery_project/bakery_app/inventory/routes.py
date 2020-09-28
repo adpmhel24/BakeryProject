@@ -80,7 +80,7 @@ def create_price():
 
 @inventory.route('/api/inv/get_items', methods=['GET'])
 def get_items():
-    items = Items.query.filter(ItemPrice.tblitems('BUNNYSAL'))
+    # price = ItemPrice.query.filter(ItemPrice.item_code=='BUNNYSAL').all()
+    items = db.session.query(Items.item_code, Items.item_name, Items.item_group, ItemPrice.price).join(ItemPrice, Items.item_code == ItemPrice.item_code)
     for i in items:
-        return items.item_code
-    # return items.item_code
+        return f'{i.item_name} {i.item_group} {i.price}'

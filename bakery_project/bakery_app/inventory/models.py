@@ -13,7 +13,10 @@ class Items(db.Model):
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     item_group = db.Column(db.String(50), db.ForeignKey('tblitemgrp.name', ondelete='CASCADE'), nullable=False)
     uom = db.Column(db.String(50), db.ForeignKey('tbluom.name', ondelete='CASCADE'), nullable=False)
-    price = db.relationship('ItemPrice', backref='tblitems', lazy=True)
+    price = db.relationship('ItemPrice', backref='items', lazy=True)
+
+    def __repr__(self):
+        return f"Items('{self.item_code}', '{self.item_name}"
 
 
 class ItemGroup(db.Model):
@@ -24,7 +27,7 @@ class ItemGroup(db.Model):
     description = db.Column(db.String(100), nullable=False, unique=True)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    items = db.relationship('Items', backref='itemgroup', lazy=True)
+    items = db.relationship('Items', backref='tblitemgrp', lazy=True)
 
 
 class UnitOfMeasure(db.Model):
