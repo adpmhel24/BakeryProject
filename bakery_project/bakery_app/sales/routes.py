@@ -11,10 +11,7 @@ from bakery_app.branches.models import Branch, Series, ObjectType
 from bakery_app.users.routes import token_required
 from bakery_app._utils import Check, ResponseMessage
 
-
-
 sales = Blueprint('sales', __name__)
-
 
 @sales.route('/api/sales/new', methods=['POST'])
 @token_required
@@ -70,7 +67,7 @@ def new_sales(curr_user):
             s_r.linetotal = s_r.gross - s_r.disc_amount
 
             db.session.add(s_r)
-            
+
         db.session.commit()
         sales_schema = SalesHeaderSchema()
         result = sales_schema.dump(sales)
@@ -87,7 +84,6 @@ def new_sales(curr_user):
     finally:
         db.session.close()
         
-
 @sales.route('/api/sales/type/new', methods=['POST'])
 @token_required
 def new_salestype(curr_user):
