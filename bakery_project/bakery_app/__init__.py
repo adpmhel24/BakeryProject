@@ -17,13 +17,13 @@ login_manager.login_view = 'users.login'
 login_manager.login_message_category = 'info'
 auth = HTTPTokenAuth(scheme='Bearer')
 
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(Config)
     app.config['JSON_SORT_KEYS'] = False
     app.config['CACHE_TYPE'] = 'simple'
     app.json_encoder = CustomJSONEncoder
-
 
     db.init_app(app)
     bcrypt.init_app(app)
@@ -32,16 +32,21 @@ def create_app(config_class=Config):
     ma.init_app(app)
 
     from bakery_app.users.routes import users
+    from bakery_app.master_data.routes import master_data
     from bakery_app.inventory.routes import inventory
     from bakery_app.branches.routes import branches
     from bakery_app.customers.routes import customers
     from bakery_app.sales.routes import sales
-    
-    app.register_blueprint(users)
+    from bakery_app.payment.routes import payment
+    from bakery_app.sapb1.routes import sapb1
+
+    app.register_blueprint(users) 
+    app.register_blueprint(master_data)
     app.register_blueprint(inventory)
     app.register_blueprint(branches)
     app.register_blueprint(customers)
     app.register_blueprint(sales)
+    app.register_blueprint(payment)
+    app.register_blueprint(sapb1)
 
     return app
-    

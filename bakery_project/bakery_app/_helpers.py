@@ -2,13 +2,18 @@ import datetime
 from flask.json import JSONEncoder
 from decimal import Decimal
 from sqlalchemy import and_, or_
+from functools import wraps
+from sqlalchemy.orm import Session
+
 
 class fakefloat(float):
     def __init__(self, value):
         self._value = value
+
     def __repr__(self):
         return str(self._value)
-        
+
+
 class CustomJSONEncoder(JSONEncoder):
     def default(self, o):
         if isinstance(o, Decimal):
@@ -20,23 +25,25 @@ class CustomJSONEncoder(JSONEncoder):
 
 
 dict_filtros_op = {
-    '==':'eq',
-    '!=':'ne',
-    '>':'gt',
-    '<':'lt',
-    '>=':'ge',
-    '<=':'le',
-    'like':'like',
-    'ilike':'ilike',
-    'in':'in'
+    '==': 'eq',
+    '!=': 'ne',
+    '>': 'gt',
+    '<': 'lt',
+    '>=': 'ge',
+    '<=': 'le',
+    'like': 'like',
+    'ilike': 'ilike',
+    'in': 'in'
 }
 
+db_session = Session()
 
-class BaseDao():
+
+class BaseQuery():
     @classmethod
     # @init_db_connection
     def create_query_select(cls, model, filters=None, columns=None):
-        return cls.db_session.query(*cls.create_query_columns(model=model, columns=columns))\
+        return cls.db_session.query(*cls.create_query_columns(model=model, columns=columns)) \
             .filter(*cls.create_query_filter(model=model, filters=filters))
 
     @classmethod
@@ -85,7 +92,10 @@ class BaseDao():
                     filt.append(column.in_(value))
                 else:
                     try:
-                        attr = list(filter(lambda e: hasattr(column, e % dict_filtros_op[op]), ['%s', '%s_', '__%s__']))[0] % dict_filtros_op[op]
+                        attr = \
+                            list(filter(lambda e: hasattr(column, e % dict_filtros_op[op]), ['%s', '%s_', '__%s__']))[
+                                0] % \
+                            dict_filtros_op[op]
                     except IndexError:
                         raise Exception('Invalid filter operator: %s' % dict_filtros_op[op])
                     if value == 'null':

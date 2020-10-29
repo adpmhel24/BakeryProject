@@ -1,18 +1,22 @@
 import json
 from datetime import datetime
+import pyodbc
 from functools import wraps
-from flask import (Blueprint, request, jsonify, abort, 
-                flash, redirect, url_for, render_template, json)
+from flask import (Blueprint, request, jsonify)
 from flask_login import current_user, login_user
 from sqlalchemy import exc
-from bakery_app.users.models import User, UserSchema
+
+from bakery_app import auth, db
+from bakery_app._helpers import BaseQuery
 from bakery_app.branches.models import Branch, Warehouses
-from bakery_app import auth, db, bcrypt
 from bakery_app._utils import Check, status_response, ResponseMessage
 
+from .models import User, UserSchema
 
 users = Blueprint('users', __name__)
 
+
+# decorator to check if valid credentials
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -21,82 +25,81 @@ def token_required(f):
             curr_user = User.query.filter_by(id=current_user.id).first()
             return f(curr_user, *args, **kwargs)
         try:
-            auth_header = request.headers['Authorization'] # grab the auth header
+            auth_header = request.headers['Authorization']  # grab the auth header
         except:
-            return jsonify({"success":False, 'message': 'Authorization is invalid'}), 401
+            return jsonify({"success": False, 'message': 'Authorization is invalid'}), 401
         token = None
         if auth_header:
             token = auth_header.split(" ")[1]
         if not token:
-            return jsonify({"success":False, 'message': 'Token is missing'}), 401
-        
+            return jsonify({"success": False, 'message': 'Token is missing'}), 401
+
         try:
             user = User.verify_auth_token(token)
             curr_user = User.query.filter_by(id=user.id).first()
         except:
-            return jsonify({"success":False, 'message': 'Token is invalid'}), 401
+            return jsonify({"success": False, 'message': 'Token is invalid'}), 401
         return f(curr_user, *args, **kwargs)
+
     return decorated
 
-# Create New User 
-@users.route('/api/user/create', methods = ['POST'])
+
+# Create New User
+@users.route('/api/auth/user/new', methods=['POST'])
 @token_required
 def new_user(curr_user):
     if not curr_user.is_admin():
-        return jsonify({'success': 'false', 'message': 'Your Not Admin!'})
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
 
     data = request.get_json()
-    
-    if data['username'] is None or data['password'] is None \
-        or data['fullname'] is None or not data['whse']:
-        response = ResponseMessage(False, message="Missing required fields!")
-        return response.resp()
 
-    if User.query.filter_by(username = data['username']).first() is not None:
-        response = ResponseMessage(False, message="User is already exist!")
-        return response.resp()
+    if data['username'] is None or data['password'] is None \
+            or data['fullname'] is None or not data['whse'] or not data['whse']:
+        return ResponseMessage(False, message="Missing required fields!").resp(), 401
+
+    if User.query.filter_by(username=data['username']).first() is not None:
+        return ResponseMessage(False, message="User is already exist!").resp(), 401
     if not Warehouses.query.filter_by(whsecode=data['whse']).first():
-        raise Exception("Invalide warehouse!")
-    
+        return ResponseMessage(False, message="Invalid warehouse!").resp(), 401
+
     try:
         user = User(**data)
         user.hash_password(data['password'])
         db.session.add(user)
         db.session.commit()
-        user_schema = UserSchema()
-        return user_schema.jsonify(user)
-    except ValueError as err:
+        user_schema = UserSchema(exclude=("password",))
+        result = user_schema.dump(user)
+        return ResponseMessage(True, data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         db.session.rollback()
-        return ResponseMessage(False, message=f"{err}").resp()
+        return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         db.session.rollback()
-        return ResponseMessage(False, message=f"{err}").resp()
-    except:
-        db.session.rollback()
-        return ResponseMessage(False, message=f"Unknown error!").resp()
+        return ResponseMessage(False, message=f"{err}").resp(), 500
     finally:
         db.session.close()
 
-@users.route('/api/get_token')
-def get_auth_token():
 
-    data = request.get_json()
-    username = data['username']
-    password = data['password']
-    user = User.query.filter_by(username=username).first()
-    if user:
-        if user.verify_password(password):
-            token = user.generate_auth_token()
-            user_schema = UserSchema(exclude=("password", "date_created"))
-            result = user_schema.dump(user)
-            response = ResponseMessage(True, token=token, data=result)
-            return response.resp()
+@users.route('/api/auth/login')
+def get_auth_token():
+    try:
+        username = request.args.get('username')
+        password = request.args.get('password')
+        user = User.query.filter_by(username=username).first()
+        if user:
+            if user.verify_password(password):
+                token = user.generate_auth_token()
+                user_schema = UserSchema(exclude=("password", "date_created"))
+                result = user_schema.dump(user)
+                response = ResponseMessage(True, message="You logged in successfully!", token=token, data=result)
+                return response.resp()
+            else:
+                return ResponseMessage(False, message='Invalid password!').resp(), 401
         else:
-            response = ResponseMessage(False, message='Invalid password!')
-            return response.resp()
-    else:
-        response = ResponseMessage(False, message='Invalid username')
-        return response.resp()
+            return ResponseMessage(False, message='Invalid username').resp(), 401
+    except Exception as err:
+        return ResponseMessage(False, message=str(err)).resp(), 500
+
 
 @auth.verify_token
 def verify_token(token):
@@ -105,210 +108,142 @@ def verify_token(token):
         return user
     return False
 
+
 # Get All User
-@users.route('/api/user/get_all_users', methods=['GET'])
+@users.route('/api/auth/user/get_all')
 @token_required
 def get_all_users(curr_user):
-    if not curr_user.is_admin():
-        return jsonify({'success': 'false', 'message': "You're not authorized"})
-    q =  request.args.get('q')
+    # contains to filter
+    filt = []
 
-    data = []
+    q = request.args.get('search')
+    branch = request.args.get('branch')  # user branch if use to login
     if q:
-        user = User.query.filter(User.username.contains(q) | User.fullname.contains(q)).order_by(User.fullname.asc()).all()
-    else:
-        user = User.query.all()
+        filt.append(('username', 'like', f'%{q}%'))
+    if branch:
+        filt.append(('branch', '==', branch))
+    try:
+        user_filter = BaseQuery.create_query_filter(User, filters={'and': filt})
+        user = db.session.query(User).filter(*user_filter). \
+            order_by(User.fullname.asc()).all()
 
-    user_schema = UserSchema(many=True)
-    result = user_schema.dump(user)
-    response = ResponseMessage(True, data=result)
-    return response.resp() 
+        user_schema = UserSchema(many=True, only=("id", "username", "fullname",))
+        result = user_schema.dump(user)
+        return ResponseMessage(True, count=len(result), data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
 
-# Get Specific User
-@users.route('/api/user/get_user/<int:id>')
+
+# Get User Details
+@users.route('/api/auth/user/details/<int:id>')
 @token_required
 def get_user(curr_user, id):
     user = curr_user
-    if not user.is_admin():
-        response = ResponseMessage(False, message="Unauthorized user!")
-        return response.resp()
-    
+    if not user.is_admin() or not curr_user.is_manager():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
     try:
         u = User.query.get(id)
-    except exc.IntegrityError:
-        response = ResponseMessage(False, message="User could not be found!")
-        return response.resp()
-    if not u:
-        response = ResponseMessage(False, message="User could not be found")
-        return response.resp()
-
-    user_schema = UserSchema()
-    result = user_schema.dump(u)
-    response = ResponseMessage(True, data=result)
-    return response.resp() 
+        user_schema = UserSchema(exclude=("password", "date_created",))
+        result = user_schema.dump(u)
+        return ResponseMessage(True, data=result).resp()
+    except exc.IntegrityError as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
 
 
 # Update User
-@users.route('/api/user/update/<int:id>', methods=['PUT'])
+@users.route('/api/auth/user/update/<int:id>', methods=['PUT'])
 @token_required
 def update_user(curr_user, id):
-    user = curr_user
     data = request.get_json()
-    
+
     if not curr_user.is_admin():
-        response = ResponseMessage(False, message="Unauthorized user!")
-        return response.resp()
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
     try:
-        u = User.query.get(id)
-    except exc.IntegrityError:
-        response = ResponseMessage(False, message="User could not be found")
-        return response.resp()
-    if not u:
-        response = ResponseMessage(False, message="Invalid user id!")
-        return response.resp()
-    
-    if data['username']:
-        u.username = data['username']
-        
-    if data['fullname']:
-        u.fullname = data['fullname']
+        user = User.query.get(id)
+        if not user:
+            return ResponseMessage(False, message="Invalid user id!").resp()
 
-    if data['password']:
-        u.hash_password(data['password'])
-
-    branch = data['branch']
-    whse = data['whse']
-    admin = data['admin']
-    sales = data['sales']
-    cashier = data['cashier']
-    manager = data['manager']
-    own_stock = data['own_stock']
-    transfer = data['transfer']
-    receive = data['receive']
-    void = data['void']
-
-    try:
-        if branch:
-            if not Branch.query.filter_by(code=branch).first():
-                raise Exception("Invalid branch code!")
-            u.branch = branch
-        if whse:
-            if not Warehouses.query.filter_by(whsecode=whse).first():
-                raise Exception("Invalide warehouse code!")
+        for k, v in data.items():
+            if k == 'branch':
+                if not Branch.query.filter_by(code=v).first():
+                    raise Exception("Invalid branch code!")
+            if k == 'whse':
+                if not Warehouses.query.filter_by(whsecode=v).first():
+                    raise Exception("Invalid warehouse code!")
+            if k == 'password':
+                user.hash_password(v)
             else:
-                u.whse = whse
-        if admin:
-            u.admin = admin
-        if sales:
-            u.sales = sales
-        if cashier:
-            u.cashier = cashier
-        if manager:
-            u.manager = manager
-        if own_stock:
-            u.own_stock = own_stock
-        if transfer:
-            u.transfer = transfer
-        if receive:
-            u.receive = receive
-        if void:
-            u.void = void
-    
+                setattr(user, k, v)
+
         db.session.commit()
         user_schema = UserSchema(exclude=("password", "date_created",))
-        result = user_schema.dump(u)
-        response = ResponseMessage(True, message="User data successfully updated!", data=result)
-        return response.resp()
-    except TypeError as e:
+        result = user_schema.dump(user)
+        return ResponseMessage(True, message="User data successfully updated!", data=result).resp()
+    except (exc.IntegrityError, pyodbc.IntegrityError) as err:
         db.session.rollback()
-        response = ResponseMessage(False, message=f"{e}")
-        return response.resp()
-    except exc.ProgrammingError as e:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
         db.session.rollback()
-        response = ResponseMessage(False, message=f"{e}")
-        return response.resp()
-    except Exception as e:
-        db.session.rollback()
-        response = ResponseMessage(False, message=f"{e}")
-        return response.resp()
+        return ResponseMessage(False, message=f"{err}").resp(), 500
     finally:
         db.session.close()
 
-    
+
 # Change Password    
 @users.route('/api/user/change_pass', methods=['PUT'])
 @token_required
 def change_pass(curr_user):
     user = curr_user
 
+    data = request.get_json()
     u = User.query.filter_by(id=curr_user.id).first()
-    if not request.args.get('password'):
-        response = ResponseMessage(False, message="Missing required field!")
-        return response.resp()
+    if not data['password']:
+        return ResponseMessage(False, message="Missing required field!").resp(), 401
 
-    u.hash_password(request.args.get('password'))
+    u.hash_password(data['password'])
     try:
         db.session.commit()
-    except TypeError as e:
+        return ResponseMessage(True, message="Password successfully updated!").resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         db.session.rollback()
-        response = ResponseMessage(False, message=e)
-        return response.resp()
-    except exc.ProgrammingError as e:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
         db.session.rollback()
-        response = ResponseMessage(False, message=e)
-        return response.resp()
-    except Exception as e:
-        db.session.rollback()
-        response = ResponseMessage(False, message=e)
-        return response.resp()
+        return ResponseMessage(False, message=f"{err}").resp(), 500
     finally:
-        db.session.close() 
-    
-    user_schema = UserSchema()
-    result = user_schema.dump(u)
-    response = ResponseMessage(True, message="Password successfully updated!", data=result)
-    return response.resp()
+        db.session.close()
+
 
 # Delete User
 @users.route('/api/user/delete/<int:id>', methods=['DELETE'])
 @token_required
 def delete_branch(curr_user, id):
-    user = curr_user
-    if not user.is_admin():
-        response = ResponseMessage(False, message="You're not authorized!")
-        return response.resp()
-    
-    u = User.query.get(id)
+    # Check if user is admin
+    if not curr_user.is_admin():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
 
-    if not u:
-        response = ResponseMessage(False, message="Invalid user id!")
-        return response.resp()
-    
     try:
-        db.session.delete(u)
-    except TypeError as e:
-        db.session.rollback()
-        db.session.close()
-        response = ResponseMessage(False, message=e)
-        return response.resp()
-    except exc.ProgrammingError as e:
-        db.session.rollback()
-        db.session.close()
-        response = ResponseMessage(False, message=e)
-        return response.resp()
-    except exc.IntegrityError as e:
-        db.session.rollback()
-        db.session.close()
-        response = ResponseMessage(False, message=e)
-        return response.resp()
-    except:
-        db.session.rollback()
-        db.session.close()
-        response = ResponseMessage(False, message="Unable to delete!")
-        return response.resp()
+        u = User.query.get(id)
 
-    db.session.commit()
-    user_schema = UserSchema()
-    result = user_schema.dump(u)
-    response = ResponseMessage(True, message=f"Successfully deleted!", data=result)
-    return response.resp()
+        if not u:
+            return ResponseMessage(False, message="Invalid user id!").resp(), 401
+
+        db.session.delete(u)
+        db.session.commit()
+        user_schema = UserSchema()
+        result = user_schema.dump(u)
+        response = ResponseMessage(True, message=f"Successfully deleted!", data=result)
+        return response.resp()
+    except (exc.IntegrityError, pyodbc.IntegrityError) as err:
+        db.session.rollback()
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        db.session.rollback()
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    finally:
+        db.session.close()
