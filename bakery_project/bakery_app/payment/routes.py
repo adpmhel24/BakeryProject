@@ -302,11 +302,15 @@ def payment_new(curr_user):
                 sales = db.session.query(SalesHeader).join(SalesRow). \
                     join(Warehouses, Warehouses.whsecode == SalesRow.whsecode).filter(and_(Warehouses.branch == curr_user.branch,
                                 func.cast(SalesHeader.date_created, DATE) == date_created,
+                                or_(and_(SalesHeader.confirm != True, SalesHeader.transtype =='CASH'),
+                                and_(SalesHeader.confirm == True, SalesHeader.transtype !='CASH')),
                                 *sales_filter)).all()
             else:
                 sales = db.session.query(SalesHeader).join(SalesRow). \
                     join(Warehouses, Warehouses.whsecode == SalesRow.whsecode)\
                         .filter(and_(Warehouses.branch == curr_user.branch,
+                                or_(and_(SalesHeader.confirm != True, SalesHeader.transtype =='CASH'),
+                                and_(SalesHeader.confirm == True, SalesHeader.transtype !='CASH')),
                                 *sales_filter)).all()
 
 
@@ -315,7 +319,7 @@ def payment_new(curr_user):
                                                               "cust_name", "objtype", "remarks", "transtype", "delfee",
                                                               "disctype", "discprcnt", "disc_amount", "gross",
                                                               "gc_amount", "doctotal", "reference2", "tenderamt",
-                                                              "sap_number", "appliedamt", "amount_due", "void", "created_user"))
+                                                              "sap_number", "appliedamt", "amount_due", "void", "created_user", "confirm"))
             result = sales_schema.dump(sales)
             return ResponseMessage(True, count=len(result), data=result).resp()
 
@@ -547,7 +551,7 @@ def cancel_cashout(curr_user, id):
 
 # Get Total of Selected Sales
 # parameter sales ids
-@payment.route('/api/sales/for_payment')
+@payment.route('/api/sales/summary_trans')
 @token_required
 def get_sales_for_payment(curr_user):
     if not curr_user.is_cashier():

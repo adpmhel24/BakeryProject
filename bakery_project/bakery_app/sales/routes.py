@@ -217,6 +217,61 @@ def sales_void(curr_user):
 
 
 
+# GET AR Sales for confirm
+@sales.route('/api/sales/for_confirm')
+@token_required
+def ar_for_confirm(curr_user):
+    if not curr_user.is_manager() and not curr_user.is_cashier() and not curr_user.is_admin():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
+    try:
+        filt = []
+        transnum = request.args.get('transnum')
+        user_id = request.args.get('user_id')
+        transtype = request.args.get('transtype')
+        date_created = request.args.get('date_created')
+
+        if transnum:
+            filt.append(('transnumber', 'like', f'%{transnum}%'))
+
+        if user_id:
+            filt.append(('created_by', '==', user_id))
+
+        if transtype:
+            filt.append(('transtype', '==', transtype))
+        filt.append(('docstatus', '==', 'O'))
+
+        sales_filter = BaseQuery.create_query_filter(
+            SalesHeader, filters={'and': filt})
+
+        if date_created:
+            sales = db.session.query(SalesHeader).join(SalesRow). \
+                join(Warehouses, Warehouses.whsecode == SalesRow.whsecode).filter(and_(Warehouses.branch == curr_user.branch,
+                            func.cast(SalesHeader.date_created, DATE) == date_created,
+                            and_(SalesHeader.confirm != True, SalesHeader.transtype !='CASH'),
+                            *sales_filter)).all()
+        else:
+            sales = db.session.query(SalesHeader).join(SalesRow). \
+                join(Warehouses, Warehouses.whsecode == SalesRow.whsecode)\
+                    .filter(and_(Warehouses.branch == curr_user.branch,
+                            and_(SalesHeader.confirm != True, SalesHeader.transtype !='CASH'),
+                            *sales_filter)).all()
+
+        sales_schema = SalesHeaderSchema(many=True, only=("id", "docstatus", "seriescode",
+                                                            "transnumber", "reference", "transdate", "cust_code",
+                                                            "cust_name", "objtype", "remarks", "transtype", "delfee",
+                                                            "disctype", "discprcnt", "disc_amount", "gross",
+                                                            "gc_amount", "doctotal", "reference2", "tenderamt",
+                                                            "sap_number", "appliedamt", "amount_due", "void", "created_user", "confirm"))
+        result = sales_schema.dump(sales)
+        return ResponseMessage(True, count=len(result), data=result).resp()
+    
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
 # Confirm AR Sales
 @sales.route('/api/sales/confirm', methods=['PUT'])
 @token_required
@@ -252,7 +307,6 @@ def ar_confirm(curr_user):
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
-
 
 
 # Add New Sales Type
