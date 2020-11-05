@@ -1,7 +1,7 @@
 from bakery_app import ma
 from .models import (WhseInv, InvTransaction, TransferRow,
-                     TransferHeader, ReceiveRow, ReceiveHeader)
-from bakery_app.master_data.md_schema import ItemsSchema
+                     TransferHeader, ReceiveRow, ReceiveHeader, ItemRequest, ItemRequestRow)
+from bakery_app.items.md_schema import ItemsSchema
 
 
 class WhseInvSchema(ma.SQLAlchemySchema):
@@ -54,3 +54,21 @@ class ReceiveHeaderSchema(ma.SQLAlchemyAutoSchema):
         include_fk = True
 
     recrow = ma.Nested(ReceiveRowSchema, many=True)
+
+
+class ItemRequestRowSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = ItemRequestRow
+        ordered = True
+        include_fk = True
+
+
+class ItemRequestSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = ItemRequest
+        ordered = True
+        include_fk = True
+
+    request_rows = ma.Nested(ItemRequestRowSchema, many=True)
+
+

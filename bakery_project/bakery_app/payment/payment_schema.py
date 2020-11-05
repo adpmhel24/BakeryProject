@@ -1,6 +1,6 @@
 from bakery_app import ma
 
-from .models import PaymentType, PayTransRow, PayTransHeader, AdvancePayment
+from .models import PaymentType, PayTransRow, PayTransHeader, Deposit, CashTransaction
 
 
 class PaymentTypeSchema(ma.SQLAlchemyAutoSchema):
@@ -25,8 +25,14 @@ class PaymentHeaderSchema(ma.SQLAlchemyAutoSchema):
     payrows = ma.Nested(PaymentRowSchema, many=True)
 
 
-class AdvancePaymentSchema(ma.SQLAlchemyAutoSchema):
+class DepositSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
-        model = AdvancePayment
+        model = Deposit
+        ordered = True
+        include_fk = True
+
+class CashTransactionSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = CashTransaction
         ordered = True
         include_fk = True

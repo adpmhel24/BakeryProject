@@ -2,6 +2,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify
 import pyodbc
 from sqlalchemy.exc import IntegrityError, DataError
+from sqlalchemy import or_, and_
 from bakery_app import db
 from bakery_app._helpers import BaseQuery
 from bakery_app._utils import Check, ResponseMessage
@@ -338,9 +339,11 @@ def new_objtype(curr_user):
 
     if not objtype or not description or not table or not code:
         return ResponseMessage(False, message=f"Missing required fields!").resp(), 401
+    
+    obj_query = db.session.query(ObjectType).filter(or_(ObjectType.code == code,ObjectType.objtype == objtype)).first()
 
-    if ObjectType.query.filter_by(code=code, objtype=objtype).first():
-        return ResponseMessage(False, message="Already exists!").resp(), 401
+    if obj_query:
+        return ResponseMessage(False, message="ObjType or ObjCode is already exists!").resp(), 401
 
     try:
         obj = ObjectType(objtype=objtype, description=description, table=table, code=code)

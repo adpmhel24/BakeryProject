@@ -116,13 +116,18 @@ def get_all_users(curr_user):
     # contains to filter
     filt = []
 
-    q = request.args.get('search')
-    branch = request.args.get('branch')  # user branch if use to login
-    if q:
-        filt.append(('username', 'like', f'%{q}%'))
-    if branch:
-        filt.append(('branch', '==', branch))
+    data = request.args.to_dict()
+
+    for k, v in data.items():
+        if k == 'search':
+            filt.append(('username', 'like', f'%{v}%'))
+        elif k == 'branch':
+            if v:
+                filt.append((k, '==', v))
+        else:
+            filt.append((k, '==', bool(int(v))))
     try:
+        
         user_filter = BaseQuery.create_query_filter(User, filters={'and': filt})
         user = db.session.query(User).filter(*user_filter). \
             order_by(User.fullname.asc()).all()

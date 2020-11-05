@@ -17,9 +17,9 @@ class Items(db.Model):
     min_stock = db.Column(db.Float, nullable=False, default=0.00)
     max_stock = db.Column(db.Float, nullable=False, default=0.00)
     price = db.Column(db.Float, nullable=False, default=0.00)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='NO ACTION'),
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id', ondelete='NO ACTION'),
                            nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
@@ -35,9 +35,9 @@ class ItemGroup(db.Model):
     description = db.Column(db.String(100), nullable=False, unique=True)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='NO ACTION'),
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id', ondelete='NO ACTION'),
                            nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
 
     items = db.relationship('Items', backref='itemgroup', lazy=True)
 
@@ -53,9 +53,9 @@ class UnitOfMeasure(db.Model):
     description = db.Column(db.String(100), nullable=False, unique=True)
     date_create = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='NO ACTION'),
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id', ondelete='NO ACTION'),
                            nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     items = db.relationship('Items', backref='unitofmeasure', lazy=True)
 
     def __repr__(self):

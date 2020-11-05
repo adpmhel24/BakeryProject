@@ -32,21 +32,25 @@ def create_app(config_class=Config):
     ma.init_app(app)
 
     from bakery_app.users.routes import users
-    from bakery_app.master_data.routes import master_data
+    from bakery_app.items.routes import items
     from bakery_app.inventory.routes import inventory
     from bakery_app.branches.routes import branches
     from bakery_app.customers.routes import customers
     from bakery_app.sales.routes import sales
     from bakery_app.payment.routes import payment
     from bakery_app.sapb1.routes import sapb1
+    from bakery_app.sap_num.routes import sap_num
+    from bakery_app.reports.routes import reports
 
     app.register_blueprint(users) 
-    app.register_blueprint(master_data)
+    app.register_blueprint(items)
     app.register_blueprint(inventory)
     app.register_blueprint(branches)
     app.register_blueprint(customers)
     app.register_blueprint(sales)
     app.register_blueprint(payment)
     app.register_blueprint(sapb1)
+    app.register_blueprint(sap_num)
+    app.register_blueprint(reports)
 
     return app

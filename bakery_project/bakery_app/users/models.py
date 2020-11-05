@@ -12,6 +12,8 @@ def load_user(user_id):
 
 
 class User(db.Model, UserMixin):
+    __tablename__ = "tbluser"
+
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), nullable=False, unique=True)
     fullname = db.Column(db.String(100), nullable=False)
@@ -28,7 +30,13 @@ class User(db.Model, UserMixin):
     transfer = db.Column(db.Boolean, default=False)
     receive = db.Column(db.Boolean, default=False)
     void = db.Column(db.Boolean, default=False)
+    discount = db.Column(db.Boolean, default=False)
+    auditor = db.Column(db.Boolean, default=False)
+    ar_sales = db.Column(db.Boolean, default=False)
+    cash_sales = db.Column(db.Boolean, default=False)
+    agent_sales = db.Column(db.Boolean, default=False)
     active = db.Column(db.Boolean, default=True)
+    
 
     def hash_password(self, password):
         self.password = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -68,6 +76,21 @@ class User(db.Model, UserMixin):
     def is_active(self):
         return self.void
 
+    def can_discount(self):
+        return self.discount
+
+    def is_auditor(self):
+        return self.auditor
+
+    def is_ar_sales(self):
+        return self.ar_sales
+    
+    def is_cash_sales(self):
+        return self.cash_sales
+
+    def is_agent_sales(self):
+        return self.agent_sales
+
     @staticmethod
     def verify_auth_token(token):
         s = Serializer(current_app.config['SECRET_KEY'])
@@ -76,8 +99,6 @@ class User(db.Model, UserMixin):
         except SignatureExpired:
             return None
         except BadSignature:
-            return None
-        except:
             return None
         return User.query.get(user_id)
 

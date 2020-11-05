@@ -8,12 +8,14 @@ from sqlalchemy import exc, and_, or_, cast, Date
 
 from bakery_app import db, auth
 from bakery_app._utils import Check, ResponseMessage
-from bakery_app.inventory.models import (TransferHeader, TransferRow, InvTransaction, ReceiveHeader, ReceiveRow,
-                                         WhseInv)
-from bakery_app.branches.models import Series, ObjectType
+from bakery_app._helpers import BaseQuery
+from bakery_app.branches.models import Series, ObjectType, Warehouses
 from bakery_app.users.routes import token_required
 
-from .inv_schema import *
+from bakery_app.inventory.models import (TransferHeader, TransferRow, ReceiveHeader, ReceiveRow,
+                                         WhseInv, ItemRequest, ItemRequestRow)
+from .inv_schema import (TransferHeaderSchema, TransferRowSchema, InvTransactionSchema, ReceiveHeaderSchema,
+                         ReceiveRowSchema, WhseInvSchema, ItemRequestSchema, ItemRequestRowSchema)
 
 inventory = Blueprint('inventory', __name__)
 
@@ -23,7 +25,12 @@ inventory = Blueprint('inventory', __name__)
 @token_required
 def create_transfer(curr_user):
     if not curr_user.can_transfer():
-        return ResponseMessage(False, message="Unathorized to transfer!").resp()
+        return ResponseMessage(False, message="Unauthorized to transfer!").resp(), 401
+    
+    # query the whse
+    whse = Warehouses.query.filter_by(whsecode=curr_user.whse).first()
+    if whse.is_cutoff():
+        return ResponseMessage(False, message="Your warehouse cutoff is enable!").resp(), 401
 
     data = request.get_json()
     details = data['details']
@@ -44,12 +51,13 @@ def create_transfer(curr_user):
         if not series:
             raise Exception("Invalid Series")
 
-        reference = series.code + str(series.next_num)
+        reference = f"{series.code}-{obj.code}-{series.next_num}"
 
         t_h = TransferHeader(series=series.id, seriescode=series.code,
                              transnumber=series.next_num, reference=reference,
                              created_by=curr_user.id, updated_by=curr_user.id,
                              **data['header'])
+        t_h.objtype = obj.objtype
 
         # add 1 to series next num
         series.next_num += 1
@@ -85,7 +93,7 @@ def create_transfer(curr_user):
             # table row
             t_r = TransferRow(transfer_id=t_h.id, transnumber=t_h.transnumber,
                               created_by=curr_user.id, updated_by=curr_user.id,
-                              sap_number=t_h.sap_number, **row)
+                              sap_number=t_h.sap_number, objtype=t_h.objtype, **row)
 
             db.session.add(t_r)
             db.session.flush()
@@ -151,9 +159,8 @@ def get_all_transfer(curr_user):
     return ResponseMessage(True, data=result).resp()
 
 
+
 # Get Transfer Details
-
-
 @inventory.route('/api/inv/trfr/getdetails/<int:id>')
 @token_required
 def transfer_details(curr_user, id):
@@ -170,6 +177,7 @@ def transfer_details(curr_user, id):
     return ResponseMessage(True, data=result).resp()
 
 
+
 # Cancel Transfer
 @inventory.route('/api/inv/trfr/cancel/<int:id>', methods=['PUT'])
 @token_required
@@ -177,7 +185,12 @@ def cancel_tranfer(curr_user, id):
     if not curr_user.is_admin():
         return ResponseMessage(False, message="Unauthorized user!")
 
-    data = request.get_json('')
+    # query the whse
+    whse = Warehouses.query.filter_by(whsecode=curr_user.whse).first()
+    if whse.is_cutoff():
+        return ResponseMessage(False, message="Your warehouse cutoff is enable!").resp(), 401
+
+    data = request.get_json()
 
     try:
         transfer = TransferHeader.query.get(id)
@@ -207,6 +220,7 @@ def cancel_tranfer(curr_user, id):
         db.session.close()
 
 
+
 # Get from System Transfer For Receive
 @inventory.route('/api/inv/trfr/forrec')
 @token_required
@@ -229,12 +243,18 @@ def get_for_receive(curr_user):
         return ResponseMessage(False, message=f"{err}").resp(), 500
 
 
+
 # Create Receive
 @inventory.route('/api/inv/recv/new', methods=['POST'])
 @token_required
 def create_receive(curr_user):
     if not curr_user.can_receive():
         return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+    
+    # query the whse
+    whse = Warehouses.query.filter_by(whsecode=curr_user.whse).first()
+    if whse.is_cutoff():
+        return ResponseMessage(False, message="Your warehouse cutoff is enable!").resp(), 401
 
     data = request.get_json()
     details = data['details']
@@ -262,11 +282,18 @@ def create_receive(curr_user):
             raise Exception("Series number already in max!")
         if not series:
             raise Exception("Invalid Series")
+        
+        reference = f"{series.code}-{obj.code}-{series.next_num}"
 
-        reference = series.code + str(series.next_num)
+        # add to header
+        data['header']['series'] = series.id
+        data['header']['objtype'] = obj.objtype
+        data['header']['seriescode'] = series.code
+        data['header']['transnumber'] = series.next_num
+        data['header']['reference'] = reference
 
-        r_h = ReceiveHeader(series=series.id, seriescode=series.code,
-                            transnumber=series.next_num, reference=reference, **data['header'])
+
+        r_h = ReceiveHeader(**data['header'])
 
         # add 1 to series next num
         series.next_num += 1
@@ -300,7 +327,7 @@ def create_receive(curr_user):
 
                 r_r = ReceiveRow(receive_id=r_h.id, transnumber=r_h.transnumber,
                                  created_by=curr_user.id, updated_by=curr_user.id,
-                                 sap_number=r_h.sap_number, **row)
+                                 sap_number=r_h.sap_number, objtype=r_h.objtype, **row)
 
                 db.session.add(r_r)
 
@@ -328,7 +355,7 @@ def create_receive(curr_user):
 
                 r_r = ReceiveRow(receive_id=r_h.id, transnumber=r_h.transnumber,
                                  created_by=curr_user.id, updated_by=curr_user.id,
-                                 sap_number=r_h.sap_number, **row)
+                                 sap_number=r_h.sap_number, objtype=r_h.objtype, **row)
 
                 db.session.add(r_r)
 
@@ -356,7 +383,7 @@ def create_receive(curr_user):
                     row.confirm = 1
                     r_r = ReceiveRow(receive_id=r_h.id, transnumber=r_h.transnumber,
                                      created_by=curr_user.id, updated_by=curr_user.id,
-                                     sap_number=r_h.sap_number)
+                                     sap_number=r_h.sap_number, objtype=r_h.objtype)
                     r_r.item_code = row.item_code
                     r_r.from_whse = row.from_whse
                     r_r.to_whse = row.to_whse
@@ -385,7 +412,7 @@ def create_receive(curr_user):
 
                 r_r = ReceiveRow(receive_id=r_h.id, transnumber=r_h.transnumber,
                                  created_by=curr_user.id, updated_by=curr_user.id,
-                                 sap_number=r_h.sap_number, **row)
+                                 sap_number=r_h.sap_number, objtype=r_h.objtype, **row)
 
                 db.session.add(r_r)
 
@@ -404,6 +431,7 @@ def create_receive(curr_user):
         return ResponseMessage(False, message=f"{err}").resp(), 500
     finally:
         db.session.close()
+
 
 
 # Get All Receive
@@ -456,6 +484,7 @@ def get_all_recv(curr_user):
     return ResponseMessage(True, data=result).resp()
 
 
+
 # Get Receive Details
 @inventory.route('/api/inv/recv/details/<int:id>')
 @token_required
@@ -476,12 +505,18 @@ def get_recv_details(curr_user, id):
     return ResponseMessage(True, data=result).resp()
 
 
+
 # Cancel Receive
 @inventory.route('/api/inv/recv/cancel/<int:id>')
 @token_required
 def cancel_recv(curr_user, id):
     if not current_user.is_admin():
         return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
+    # query the whse
+    whse = Warehouses.query.filter_by(whsecode=curr_user.whse).first()
+    if whse.is_cutoff():
+        return ResponseMessage(False, message="Your warehouse cutoff is enable!").resp(), 401
 
     data = request.get_json()
 
@@ -504,6 +539,7 @@ def cancel_recv(curr_user, id):
         db.session.close()
 
 
+
 # Get All Warehouse Inv
 @inventory.route('/api/inv/whseinv/getall')
 @token_required
@@ -518,6 +554,7 @@ def get_whseinv(curr_user):
         return ResponseMessage(True, data=result).resp()
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 401
+
 
 
 # Inventory Report Per Warehouse
@@ -574,3 +611,168 @@ def get_inventory_report_per_whse(curr_user):
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+
+# Create New Item Request
+@inventory.route('/api/inv/item_request/new', methods=['POST'])
+@token_required
+def create_item_request(curr_user):
+    try:
+        data = request.get_json()
+        header = data['header']
+        details = data['rows']
+        obj = ObjectType.query.filter_by(code='REQT').first()
+        series = Series.query.filter_by(
+            whsecode=curr_user.whse, objtype=obj.objtype).first()
+        if series.next_num + 1 > series.end_num:
+            raise Exception("Series number already in max!")
+        if not series:
+            raise Exception("Invalid Series")
+        
+        reference = f"{series.code}-{obj.code}-{series.next_num}"
+        req_header = ItemRequest(series=series.id, seriescode=series.code,
+                            transnumber=series.next_num, reference=reference, 
+                            objtype=obj.objtype, **header)
+        req_header.created_by = curr_user.id
+        req_header.updated_by = curr_user.id
+
+        # add 1 to next num series
+        series.next_num += 1
+        
+        db.session.add_all([req_header, series])
+        db.session.flush()
+
+        for row in details:
+            if row['to_whse'] != curr_user.whse and not curr_user.is_admin():
+                raise Exception(f"'{row['to_whse']}' is not equal to your user warehouse!")
+
+            check = Check(**row)
+            # check if valid
+            if not check.itemcode_exist():
+                raise Exception("Invalid itemcode!")
+            elif not check.uom_exist():
+                raise Exception("Invalid uom!")
+            elif not check.fromwhse_exist():
+                raise Exception("Invalid from whse code!")
+            elif not check.towhse_exist():
+                raise Exception("Invalid to whse code!")
+
+            req_row = ItemRequestRow(request_id=req_header.id, objtype=req_header.objtype, 
+                                    created_by=req_header.created_by,
+                                    updated_by=req_header.updated_by,
+                                    **row)
+            db.session.add(req_row)
+            
+        db.session.commit()
+        
+        request_schema = ItemRequestSchema()
+        result = request_schema.dump(req_header)
+        return ResponseMessage(True, message="Successfully added!", data=result).resp()
+        
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+
+# Get All Item Request
+@inventory.route('/api/inv/item_request/get_all')
+@token_required
+def get_all_item_request(curr_user):
+    
+    try:
+        from_whse = curr_user.whse if not curr_user.is_admin() else request.args.get('from_whse')
+        to_whse = request.args.get('to_whse')
+
+        filt = []
+
+        if from_whse:
+            filt.append(("from_whse", "==", from_whse))
+        if to_whse:
+            filt.append(("to_whse", "==", to_whse))
+
+        request_filter = BaseQuery.create_query_filter(ItemRequestRow, filters={'and': filt})
+        request = db.session.query(ItemRequest).filter(*request_filter).all()
+
+        request_schema = ItemRequestSchema(many=True, exclude=("date_created", "date_udpated", "created_by", "updated_by",))
+        result = request_schema.dump(request)
+        return ResponseMessage(True, message="Successfully added!", data=result).resp()
+    
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Get Item Request Details
+@inventory.route('/api/inv/item_request/details/<int:id>')
+@token_required
+def get_item_request_details(curr_user):
+
+    try:
+        item_req = ItemRequest.query.get(id)
+        request_schema = ItemRequestSchema()
+        result = request_schema.dump(request)
+        return ResponseMessage(True, message="Successfully added!", data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Cancel Item Request
+@inventory.route('/api/inv/item_request/cancel/<int:id>')
+@token_required
+def cancel_item_request(curr_user):
+
+    try:
+        data = request.get_json()
+        item_req = ItemRequest.query.get(id)
+        if not item_req:
+            raise Exception("Invalid item request id!")
+        item_req.remarks = data['remarks']
+        item_req.docstatus = 'N'
+        request_schema = ItemRequestSchema()
+        result = request_schema.dump(request)
+        return ResponseMessage(True, message="Successfully added!", data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Create Inventory Count
+@inventory.route('/api/inv/count/create', methods=['POST', 'GET'])
+@token_required
+def create_inv_count(curr_user):
+
+    if request.method == 'GET':
+        try:
+            # query the whse and check if the cutoff is true
+            whse = Warehouses.query.filter_by(whsecode=curr_user.whse).first()
+            if not whse.is_cutoff():
+                return ResponseMessage(False, message="Cutoff is disable").resp(), 401
+            if not curr_user.is_manager():
+                whseinv = WhseInv.query.filter(warehouse == curr_user.whse).all()
+                whseinv_schema = WhseInvSchema(many=True)
+
+        except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+            return ResponseMessage(False, message=f"{err}").resp()
+        except Exception as err:
+            return ResponseMessage(False, message=f"{err}").resp()
+    elif request.method == 'POST':
+        try:
+            # query the whse and check if the cutoff is true
+            whse = Warehouses.query.filter_by(whsecode=curr_user.whse).first()
+            if not whse.is_cutoff():
+                return ResponseMessage(False, message="Cutoff is disable").resp(), 401  
+            pass
+        except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+            return ResponseMessage(False, message=f"{err}").resp()
+        except Exception as err:
+            return ResponseMessage(False, message=f"{err}").resp()
+    
+        
+    

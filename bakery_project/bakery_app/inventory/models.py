@@ -2,8 +2,9 @@ from datetime import datetime
 from sqlalchemy import event
 from bakery_app import db, ma
 from sqlalchemy import cast, and_
-from bakery_app.master_data.models import Items
+from bakery_app.items.models import Items
 from bakery_app.branches.models import Warehouses
+from bakery_app._helpers import get_model_changes
 
 
 class WhseInv(db.Model):
@@ -15,9 +16,9 @@ class WhseInv(db.Model):
     quantity = db.Column(db.Float, nullable=False, default=0.00)
     warehouse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode',
                                                         ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id',
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id',
                                                      ondelete='NO ACTION'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
 
     item = db.relationship("Items", backref="whseinv", lazy=True)
 
@@ -47,9 +48,9 @@ class InvTransaction(db.Model):
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     created_by = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=False)
+        db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     updated_by = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=False)
+        db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     sap_number = db.Column(db.Integer, nullable=True, default=None)
     remarks = db.Column(db.String(150))
 
@@ -63,15 +64,15 @@ class TransferHeader(db.Model):
     seriescode = db.Column(db.String(50), nullable=False)  # series code
     transnumber = db.Column(db.Integer, nullable=False)  # series next_num
     reference = db.Column(db.String(100))  # Objcode + Series Next Num
-    objtype = db.Column(db.Integer, nullable=False, default=1)
+    objtype = db.Column(db.Integer, nullable=False)
     sap_number = db.Column(db.Integer, nullable=True, default=None)
     docstatus = db.Column(db.String(10), nullable=False, default='O')
     transdate = db.Column(db.DateTime)
     reference2 = db.Column(db.String(100))
     remarks = db.Column(db.String(250))
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='NO ACTION'),
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id', ondelete='NO ACTION'),
                            nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     transrow = db.relationship(
@@ -85,7 +86,7 @@ class TransferRow(db.Model):
     transfer_id = db.Column(db.Integer, db.ForeignKey(
         'tbltransfer.id', ondelete='CASCADE'), nullable=False)
     transnumber = db.Column(db.Integer, nullable=False)
-    objtype = db.Column(db.Integer, nullable=False, default=1)
+    objtype = db.Column(db.Integer, nullable=False)
     from_whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode',
                                                         ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
     to_whse = db.Column(db.String(100), db.ForeignKey(
@@ -97,9 +98,9 @@ class TransferRow(db.Model):
         'tbluom.code'), nullable=False)
     sap_number = db.Column(db.Integer, nullable=True, default=None)
     confirm = db.Column(db.Boolean, nullable=False, default=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id',
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id',
                                                      ondelete='NO ACTION'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     status = db.Column(db.Integer, default=1)  # 1 for not cancel, 2 for cancel
@@ -116,7 +117,7 @@ class ReceiveHeader(db.Model):
     seriescode = db.Column(db.String(50), nullable=False)  # series code
     transnumber = db.Column(db.Integer, nullable=False)  # series next_num
     base_id = db.Column(db.Integer)  # if from System Transfer
-    objtype = db.Column(db.Integer, nullable=False, default=2)
+    objtype = db.Column(db.Integer, nullable=False)
     sap_number = db.Column(db.Integer, nullable=True, default=None)
     docstatus = db.Column(db.String(10), nullable=False, default='O')
     transtype = db.Column(db.String(100))
@@ -125,9 +126,9 @@ class ReceiveHeader(db.Model):
     reference2 = db.Column(db.String(100))
     remarks = db.Column(db.String(250), nullable=True)
     supplier = db.Column(db.String(150))
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='NO ACTION'),
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id', ondelete='NO ACTION'),
                            nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     recrow = db.relationship(
@@ -141,7 +142,7 @@ class ReceiveRow(db.Model):
     receive_id = db.Column(db.Integer, db.ForeignKey(
         'tblreceive.id', ondelete='CASCADE'), nullable=False)
     transnumber = db.Column(db.Integer, nullable=False)
-    objtype = db.Column(db.Integer, nullable=False, default=2)
+    objtype = db.Column(db.Integer, nullable=False)
     from_whse = db.Column(db.String(100))
     to_whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode',
                                                       ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
@@ -151,9 +152,9 @@ class ReceiveRow(db.Model):
     actualrec = db.Column(db.Float, nullable=False)
     uom = db.Column(db.String(50), db.ForeignKey(
         'tbluom.code'), nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id',
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id',
                                                      ondelete='NO ACTION'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     sap_number = db.Column(db.Integer, nullable=True, default=None)
@@ -167,21 +168,24 @@ class ItemRequest(db.Model):
     __tablename__ = "tblitemreq"
 
     id = db.Column(db.Integer, primary_key=True)
-    series = db.Column(db.Integer, db.ForeignKey(
-        'tblseries.id', ondelete='NO ACTION', onupdate='NO ACTION'))
+    series = db.Column(db.Integer, db.ForeignKey('tblseries.id', ondelete='NO ACTION',
+                                                 onupdate='NO ACTION'))  # series id
+    seriescode = db.Column(db.String(50), nullable=False)  # series code
     transnumber = db.Column(db.Integer, nullable=False)
+    reference = db.Column(db.String(100))
     transdate = db.Column(db.DateTime, nullable=False, default=datetime.now)
     duedate = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    from_whse = db.Column(db.String(100), db.ForeignKey(
-        'tblwhses.whsecode', onupdate='NO ACTION'), nullable=False)
-    to_whse = db.Column(db.String(100), db.ForeignKey(
-        'tblwhses.whsecode', onupdate='NO ACTION'), nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id',
+    reference2 = db.Column(db.String(100))
+    remarks = db.Column(db.String(250))
+    docstatus = db.Column(db.String(10), default='O', nullable=False)
+    objtype = db.Column(db.Integer, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id',
                                                      ondelete='NO ACTION'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    rows = db.relationship('ItemRequestRow', backref='rows', lazy=True)
+
+    request_rows = db.relationship('ItemRequestRow', back_populates="request_header", lazy=True)
 
 
 class ItemRequestRow(db.Model):
@@ -190,20 +194,131 @@ class ItemRequestRow(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     request_id = db.Column(db.Integer, db.ForeignKey(
         'tblitemreq.id', ondelete='CASCADE'), nullable=False)
-    from_whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode',
+    objtype = db.Column(db.Integer, nullable=False)
+    from_whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode', 
                                                         ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
-    to_whse = db.Column(db.String(100), db.ForeignKey(
-        'tblwhses.whsecode'), nullable=False)
+    to_whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode'), nullable=False)
     item_code = db.Column(db.String(100), db.ForeignKey('tblitems.item_code',
                                                         ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
     quantity = db.Column(db.Float, nullable=False)
-    uom = db.Column(db.String(50), db.ForeignKey(
-        'tbluom.code'), nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id',
+    uom = db.Column(db.String(50), db.ForeignKey('tbluom.code'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id',
                                                      ondelete='NO ACTION'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+    request_header = db.relationship("ItemRequest", back_populates="request_rows", lazy=True)
+
+
+
+class ItemAdjustmentIn(db.Model):
+    __tablename__ = "tblitem_adj_in"
+
+    id = db.Column(db.Integer, primary_key=True)
+    series = db.Column(db.Integer, db.ForeignKey('tblseries.id', ondelete='NO ACTION',
+                                                 onupdate='NO ACTION'))  # series id
+    seriescode = db.Column(db.String(50), nullable=False)  # series code
+    transnumber = db.Column(db.Integer, nullable=False)  # series next_num
+    transdate = db.Column(db.DateTime, nullable=False)
+    reference = db.Column(db.String(100), nullable=False)  # seriescode + number
+    objtype = db.Column(db.Integer, db.ForeignKey('tblobjtype.objtype'), nullable=False)
+    docstatus = db.Column(db.String(10), default='O', nullable=False)
+    sap_number = db.Column(db.Integer)
+    remarks = db.Column(db.String(250))
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+
+class ItemAdjustmentInRow(db.Model):
+    __tablename__ = "tblitemadjinrow"
+
+    id = db.Column(db.Integer, primary_key=True)
+    adjustin_id = db.Column(db.Integer, db.ForeignKey('tblitem_adj_in.id', ondelete='CASCADE'), nullable=False)
+    objtype = db.Column(db.Integer, nullable=False)
+    item_code = db.Column(db.String(100), db.ForeignKey('tblitems.item_code'), nullable=False)
+    quantity = db.Column(db.Float, nullable=False)
+    whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+
+class ItemAdjustmentOut(db.Model):
+    __tablename__ = "tblitem_adj_out"
+
+    id = db.Column(db.Integer, primary_key=True)
+    series = db.Column(db.Integer, db.ForeignKey('tblseries.id', ondelete='NO ACTION',
+                                                 onupdate='NO ACTION'))  # series id
+    seriescode = db.Column(db.String(50), nullable=False)  # series code
+    transnumber = db.Column(db.Integer, nullable=False)  # series next_num
+    transdate = db.Column(db.DateTime, nullable=False)
+    reference = db.Column(db.String(100), nullable=False)  # seriescode + number
+    objtype = db.Column(db.Integer, db.ForeignKey('tblobjtype.objtype'), nullable=False)
+    docstatus = db.Column(db.String(10), default='O', nullable=False)
+    sap_number = db.Column(db.Integer)
+    remarks = db.Column(db.String(250))
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+
+
+class ItemAdjustmentOutRow(db.Model):
+    __tablename__ = "tblitemadjoutrow"
+
+    id = db.Column(db.Integer, primary_key=True)
+    adjustout_id = db.Column(db.Integer, db.ForeignKey('tblitem_adj_out.id', ondelete='CASCADE'), nullable=False)
+    objtype = db.Column(db.Integer, nullable=False)
+    item_code = db.Column(db.String(100), db.ForeignKey('tblitems.item_code'), nullable=False)
+    quantity = db.Column(db.Float, nullable=False)
+    whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
+
+
+class CountingInventoryHeader(db.Model):
+    __tablename__ = "tblcounting_inv"
+
+    id = db.Column(db.Integer, primary_key=True)
+    series = db.Column(db.Integer, db.ForeignKey('tblseries.id', ondelete='NO ACTION',
+                                                 onupdate='NO ACTION'))  # series id
+    seriescode = db.Column(db.String(50), nullable=False)  # series code
+    transnumber = db.Column(db.Integer, nullable=False)  # series next_num
+    transdate = db.Column(db.DateTime, nullable=False)
+    reference = db.Column(db.String(100), nullable=False)  # seriescode + number
+    remarks = db.Column(db.String(250))
+    docstatus = db.Column(db.String(10), default='O', nullable=False)
+    sap_number = db.Column(db.Integer)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    
+
+
+class CountingInventoryRow(db.Model):
+    __tablename__ = "tblcounting_inv_row"
+
+    id = db.Column(db.Integer, primary_key=True)
+    counting_id = db.Column(db.Integer, db.ForeignKey('tblcounting_inv.id', ondelete='CASCADE'),
+                            nullable=False)
+    item_code = db.Column(db.String(100), db.ForeignKey('tblitems.item_code'))
+    objtype = db.Column(db.Integer, nullable=False)
+    quantity = db.Column(db.Float, nullable=False, default=0.00)
+    actual_count = db.Column(db.Float, nullable=False, default=0.00)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+
 
 
 @event.listens_for(db.session, "before_flush")
@@ -266,55 +381,58 @@ def insert_update(*args):
     # Update When Receive Transaction Canceled
     for obj in sess.dirty:
         if isinstance(obj, ReceiveHeader):
-            receive_header = ReceiveHeader.query.get(obj.id)
             # check if the update is cancel and The header is not cancel
-            if obj.docstatus == 'N' and receive_header.docstatus != 'N':
-                rec_row = ReceiveRow.query.filter_by(receive_id=obj.id).all()
+            changes = get_model_changes(obj)
+            for i in changes:
+                if i == 'status':
+                    if changes[i][1] == 'N':
+                        rec_row = ReceiveRow.query.filter_by(receive_id=obj.id).all()
+                        for row in rec_row:
+                            # add to inventory transaction the void transaction
+                            inv_trans = InvTransaction(trans_id=obj.id, trans_num=obj.transnumber,
+                                                    objtype=obj.objtype, item_code=row.item_code,
+                                                    outqty=row.actualrec, uom=row.uom,
+                                                    warehouse=row.to_whse, warehouse2=row.from_whse,
+                                                    transdate=obj.transdate, created_by=obj.created_by,
+                                                    reference=obj.reference, reference2=obj.reference2,
+                                                    remarks=obj.remarks, series_code=obj.seriescode,
+                                                    updated_by=obj.updated_by)
 
-                for row in rec_row:
-                    # add to inventory transaction the void transaction
-                    inv_trans = InvTransaction(trans_id=obj.id, trans_num=obj.transnumber,
-                                               objtype=obj.objtype, item_code=row.item_code,
-                                               outqty=row.actualrec, uom=row.uom,
-                                               warehouse=row.to_whse, warehouse2=row.from_whse,
-                                               transdate=obj.transdate, created_by=obj.created_by,
-                                               reference=obj.reference, reference2=obj.reference2,
-                                               remarks=obj.remarks, series_code=obj.seriescode,
-                                               updated_by=obj.updated_by)
+                            # deduct the canceled qty to whse
+                            whseinv = WhseInv.query.filter_by(warehouse=obj.to_whse,
+                                                            item_code=obj.item_code).first()
+                            whseinv.quantity -= obj.actualrec
 
-                    # deduct the canceled qty to whse
-                    whseinv = WhseInv.query.filter_by(warehouse=obj.to_whse,
-                                                      item_code=obj.item_code).first()
-                    whseinv.quantity -= obj.actualrec
+                            row.status = 2
 
-                    row.status = 2
-
-                    db.session.add_all([inv_trans, whseinv, row])
+                            db.session.add_all([inv_trans, whseinv, row])
 
         if isinstance(obj, TransferHeader):
-            if obj.docstatus == 'N':
-                trans_row = TransferHeader.query.filter_by(
-                    transfer_id=obj.id).all()
+            changes = get_model_changes(obj)
+            for i in changes:
+                if i == 'status':
+                    if changes[i][1] == 'N':
+                        trans_row = TransferHeader.query.filter_by(transfer_id=obj.id).all()
 
-                for row in trans_row:
-                    # add to inventory transaction the void transaction
-                    inv_trans = InvTransaction(trans_id=obj.id, trans_num=obj.transnumber,
-                                               objtype=obj.objtype, item_code=row.item_code,
-                                               inqty=row.actualrec, uom=row.uom,
-                                               warehouse=row.from_whse, warehouse2=row.to_whse,
-                                               transdate=obj.transdate, created_by=obj.created_by,
-                                               reference=obj.reference, reference2=obj.reference2,
-                                               remarks=obj.remarks, series_code=obj.seriescode,
-                                               updated_by=obj.updated_by)
+                        for row in trans_row:
+                            # add to inventory transaction the void transaction
+                            inv_trans = InvTransaction(trans_id=obj.id, trans_num=obj.transnumber,
+                                                    objtype=obj.objtype, item_code=row.item_code,
+                                                    inqty=row.actualrec, uom=row.uom,
+                                                    warehouse=row.from_whse, warehouse2=row.to_whse,
+                                                    transdate=obj.transdate, created_by=obj.created_by,
+                                                    reference=obj.reference, reference2=obj.reference2,
+                                                    remarks=obj.remarks, series_code=obj.seriescode,
+                                                    updated_by=obj.updated_by)
 
-                    # deduct the canceled qty to whse
-                    whseinv = WhseInv.query.filter_by(warehouse=obj.from_whse,
-                                                      item_code=obj.item_code).first()
-                    whseinv.quantity += obj.actualrec
+                            # deduct the canceled qty to whse
+                            whseinv = WhseInv.query.filter_by(warehouse=obj.from_whse,
+                                                            item_code=obj.item_code).first()
+                            whseinv.quantity += obj.actualrec
 
-                    row.status = 2
+                            row.status = 2
 
-                    db.session.add_all([inv_trans, whseinv, row])
+                            db.session.add_all([inv_trans, whseinv, row])
 
         else:
             continue

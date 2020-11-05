@@ -4,20 +4,20 @@ import pyodbc
 from datetime import datetime, date
 from flask import Blueprint, request, jsonify, json
 from flask_login import current_user
-from sqlalchemy import exc, and_, or_, cast, Date
+from sqlalchemy import exc, and_, or_
 
 from bakery_app import db, auth
 from bakery_app._utils import Check, ResponseMessage
 from bakery_app.users.routes import token_required
 
-from bakery_app.master_data.models import Items, ItemGroup, UnitOfMeasure
-from bakery_app.master_data.md_schema import *
+from .models import Items, ItemGroup, UnitOfMeasure
+from .md_schema import *
 
-master_data = Blueprint('master_data', __name__)
+items = Blueprint('items', __name__)
 
 
 # Create New Item
-@master_data.route('/api/item/new', methods=['POST'])
+@items.route('/api/item/new', methods=['POST'])
 @token_required
 def create_item(curr_user):
     user = curr_user
@@ -72,15 +72,12 @@ def create_item(curr_user):
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         db.session.rollback()
         return ResponseMessage(False, message=f'{err}').resp(), 401
-    except:
-        db.session.rollback()
-        return ResponseMessage(False, message="Unknown error").resp(), 401
     finally:
         db.session.close()
 
 
 # Get All Items
-@master_data.route('/api/item/getall')
+@items.route('/api/item/getall')
 @token_required
 def get_all_items(curr_user):
 
@@ -99,7 +96,7 @@ def get_all_items(curr_user):
 
 
 # Get Item detail
-@master_data.route('/api/item/getdetail/<int:id>')
+@items.route('/api/item/getdetail/<int:id>')
 @token_required
 def get_item_detail(curr_user, id):
 
@@ -118,7 +115,7 @@ def get_item_detail(curr_user, id):
 
 
 # Update Item
-@master_data.route('/api/item/update/<int:id>', methods=['PUT'])
+@items.route('/api/item/update/<int:id>', methods=['PUT'])
 @token_required
 def update_item(curr_user, id):
     user = curr_user
@@ -164,7 +161,7 @@ def update_item(curr_user, id):
         db.session.commit()
         item_schema = ItemsSchema()
         result = item_schema.dump(item)
-        return ResponseMessage(True, message="Succesfully updated", data=result).resp()
+        return ResponseMessage(True, message="Successfully updated", data=result).resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         db.session.rollback()
         return ResponseMessage(False, message=f"{err}").resp(), 401
@@ -176,7 +173,7 @@ def update_item(curr_user, id):
 
 
 # Delete Item
-@master_data.route('/api/item/delete/<int:id>', methods=['DELETE'])
+@items.route('/api/item/delete/<int:id>', methods=['DELETE'])
 @token_required
 def delete_item(curr_user, id):
     if not curr_user.is_admin():
@@ -205,7 +202,7 @@ def delete_item(curr_user, id):
 
 
 # Create Item Group
-@master_data.route('/api/item/item_grp/create', methods=['POST'])
+@items.route('/api/item/item_grp/create', methods=['POST'])
 @token_required
 def create_itemgroup(curr_user):
     user = curr_user
@@ -243,7 +240,7 @@ def create_itemgroup(curr_user):
 
 
 # Get All Item Group
-@master_data.route('/api/item/item_grp/getall')
+@items.route('/api/item/item_grp/getall')
 @token_required
 def get_all_itemgrp(curr_user):
 
@@ -261,7 +258,7 @@ def get_all_itemgrp(curr_user):
 
 
 # Get Item Group details
-@master_data.route('/api/item/item_grp/details/<int:id>')
+@items.route('/api/item/item_grp/details/<int:id>')
 @token_required
 def get_itemgrp_details(curr_user, id):
 
@@ -281,7 +278,7 @@ def get_itemgrp_details(curr_user, id):
 
 
 # Update Item Group
-@master_data.route('/api/item/item_grp/update/<int:id>', methods=['PUT'])
+@items.route('/api/item/item_grp/update/<int:id>', methods=['PUT'])
 @token_required
 def update_itemgrp(curr_user, id):
     if not curr_user.is_admin():
@@ -325,7 +322,7 @@ def update_itemgrp(curr_user, id):
 
 
 # Delete Item Group
-@master_data.route('/api/item/item_grp/delete/<int:id>', methods=['DELETE'])
+@items.route('/api/item/item_grp/delete/<int:id>', methods=['DELETE'])
 @token_required
 def delete_itemgrp(curr_user, id):
     if not curr_user.is_admin():
@@ -346,15 +343,12 @@ def delete_itemgrp(curr_user, id):
     except Exception as err:
         db.session.rollback()
         return ResponseMessage(False, message=f"{err}").resp(), 401
-    except:
-        db.session.rollback()
-        return ResponseMessage(False, message="Invalid item group id!").resp(), 401
     finally:
         db.session.close()
 
 
 # Create UoM
-@master_data.route('/api/item/uom/create', methods=['POST'])
+@items.route('/api/item/uom/create', methods=['POST'])
 @token_required
 def create_uom(curr_user):
     user = curr_user
@@ -380,20 +374,17 @@ def create_uom(curr_user):
     except Exception as err:
         db.session.rollback()
         return ResponseMessage(False, message=f"{err}").resp()
-    except:
-        db.session.rollback()
-        return ResponseMessage(False, message="Unknown error!").resp()
     finally:
         db.session.close()
 
 
-@master_data.route('/api/item/uom/getall')
+@items.route('/api/item/uom/getall')
 @token_required
 def get_all_uom(curr_user):
 
     q = request.args.get('q')
     if q:
-        oum = UnitOfMeasure.query.filter(UnitOfMeasure.code.contains(
+        uom = UnitOfMeasure.query.filter(UnitOfMeasure.code.contains(
             q) | UnitOfMeasure.code.contains(q)).all()
     else:
         uom = UnitOfMeasure.query.all()
@@ -404,7 +395,7 @@ def get_all_uom(curr_user):
 
 
 # Get UoM Details
-@master_data.route('/api/item/uom/details/<int:id>')
+@items.route('/api/item/uom/details/<int:id>')
 @token_required
 def get_uom_details(curr_user, id):
 
@@ -420,12 +411,10 @@ def get_uom_details(curr_user, id):
     except Exception as err:
         db.session.rollback()
         return ResponseMessage(False, message=f"{err}").resp()
-    except:
-        return ResponseMessage(False, message="Unknown error!").resp()
 
 
 # Update UoM
-@master_data.route('/api/item/uom/update/<int:id>', methods=['PUT'])
+@items.route('/api/item/uom/update/<int:id>', methods=['PUT'])
 @token_required
 def update_uom(curr_user, id):
     if not curr_user.is_admin():
@@ -453,15 +442,12 @@ def update_uom(curr_user, id):
     except Exception as err:
         db.session.rollback()
         return ResponseMessage(False, message=f"{err}").resp()
-    except:
-        db.session.rollback()
-        return ResponseMessage(False, message="Unknown error!")
     finally:
         db.session.close()
 
 
 # Delete UoM
-@master_data.route('/api/item/uom/delete/<int:id>', methods=['DELETE'])
+@items.route('/api/item/uom/delete/<int:id>', methods=['DELETE'])
 @token_required
 def delete_uom(curr_user, id):
     if not curr_user.is_admin():
@@ -479,8 +465,5 @@ def delete_uom(curr_user, id):
     except (exc.IntegrityError, pyodbc.IntegrityError) as err:
         db.session.rollback()
         return ResponseMessage(False, message=err)
-    except:
-        db.session.rollback()
-        return ResponseMessage(False, message="Unknown error!")
     finally:
         db.session.close()

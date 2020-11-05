@@ -1,4 +1,5 @@
 from bakery_app import ma
+from bakery_app.users.models import UserSchema
 from .models import SalesHeader, SalesRow, SalesType, DiscountType
 
 
@@ -29,3 +30,4 @@ class SalesHeaderSchema(ma.SQLAlchemyAutoSchema):
         load_instance = True
 
     salesrow = ma.Nested(SalesRowSchema, many=True)
+    created_user = ma.Nested(UserSchema, only=("username",))

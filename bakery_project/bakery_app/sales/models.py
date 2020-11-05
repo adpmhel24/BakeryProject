@@ -3,6 +3,7 @@ from sqlalchemy import event
 from bakery_app import db, ma
 from bakery_app.customers.models import Customer
 from bakery_app.inventory.models import InvTransaction, WhseInv
+from bakery_app._helpers import get_model_changes
 
 
 class SalesHeader(db.Model):
@@ -35,11 +36,17 @@ class SalesHeader(db.Model):
     appliedamt = db.Column(db.Float, default=0.00)
     change = db.Column(db.Float, default=0.00)
     amount_due = db.Column(db.Float, default=0.00)
+    row_discount = db.Column(db.Float, default=0.00)
     void = db.Column(db.Boolean, nullable=True, default=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    confirm = db.Column(db.Boolean, default=False)
+    date_confirm = db.Column(db.DateTime, default=datetime.now)
+    confirm_by = db.Column(db.Integer) # user id
+
+    created_user = db.relationship("User", backref="salesheader", foreign_keys=[created_by])
 
     salesrow = db.relationship("SalesRow", back_populates="salesheader", lazy=True)
 
@@ -62,6 +69,7 @@ class SalesRow(db.Model):
     linetotal = db.Column(db.Float, nullable=False, default=0.00)
     free = db.Column(db.Boolean, default=False)
 
+    row_whse = db.relationship("Warehouses", backref="salesrow", foreign_keys=[whsecode])
     salesheader = db.relationship("SalesHeader", back_populates="salesrow", lazy=True)
 
 
@@ -71,8 +79,8 @@ class SalesType(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(50), nullable=False, unique=True)
     description = db.Column(db.String(100), nullable=False)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
@@ -84,8 +92,8 @@ class DiscountType(db.Model):
     code = db.Column(db.String(50), nullable=False, unique=True)
     description = db.Column(db.String(100), nullable=False)
     discount = db.Column(db.Float, nullable=False, default=0.00)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
@@ -97,8 +105,8 @@ class DiscountedCustomer(db.Model):
     senior_name = db.Column(db.String(100), nullable=False, unique=True)
     senior_id = db.Column(db.String(150), nullable=False)
     contact_number = db.Column(db.String(30))
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
 
@@ -115,10 +123,12 @@ def sales_insert_event(*args):
             cust = Customer.query.filter_by(code=sales.cust_code).first()
 
             # update the sales header
-            sales.gross += obj.linetotal
-            sales.disc_amount = sales.gross * (sales.discprcnt / 100)
+            sales.gross += obj.gross
+            sales.disc_amount = sales.gross * (sales.discprcnt / 100) + obj.disc_amount
             sales.doctotal = sales.delfee + sales.gross - sales.disc_amount - sales.gc_amount
             sales.amount_due = sales.doctotal
+
+            sales.row_discount += obj.disc_amount
 
             if sales.tenderamt >= sales.amount_due:
                 sales.change = sales.tenderamt - sales.amount_due
@@ -153,33 +163,37 @@ def sales_update_event(*args):
     for obj in sess.dirty:
 
         if isinstance(obj, SalesHeader):
-            if obj.void:
-                salesrow = SalesRow.query.filter(SalesRow.sales_id == obj.id).all()
+            # get the changes
+            changes = get_model_changes(obj)
+            for i in changes:
+                if i == 'void':
+                    if changes[i][1] == True:
+                        salesrow = SalesRow.query.filter(SalesRow.sales_id == obj.id).all()
 
-                # Update Customer Balance
-                cust = Customer.query.filter_by(code=obj.cust_code).first()
-                cust.balance -= obj.amount_due
+                        # Update Customer Balance
+                        cust = Customer.query.filter_by(code=obj.cust_code).first()
+                        cust.balance -= obj.amount_due
 
-                # Loop all the items in salesrow if the header is void
-                # And Insert to Inv_transaction the voided items
-                for row in salesrow:
-                    # add to inventory transaction the void transaction
-                    inv_trans = InvTransaction(trans_id=obj.id, trans_num=obj.transnumber,
-                                               objtype=obj.objtype, item_code=row.item_code,
-                                               inqty=row.quantity, uom=row.uom,
-                                               warehouse=row.whsecode, warehouse2=row.whsecode,
-                                               transdate=obj.transdate, created_by=obj.created_by,
-                                               reference=obj.reference, reference2=obj.reference2,
-                                               remarks=obj.remarks, series_code=obj.seriescode,
-                                               updated_by=obj.updated_by)
+                        # Loop all the items in salesrow if the header is void
+                        # And Insert to Inv_transaction the voided items
+                        for row in salesrow:
+                            # add to inventory transaction the void transaction
+                            inv_trans = InvTransaction(trans_id=obj.id, trans_num=obj.transnumber,
+                                                       objtype=obj.objtype, item_code=row.item_code,
+                                                       inqty=row.quantity, uom=row.uom,
+                                                       warehouse=row.whsecode, warehouse2=row.whsecode,
+                                                       transdate=obj.transdate, created_by=obj.created_by,
+                                                       reference=obj.reference, reference2=obj.reference2,
+                                                       remarks=obj.remarks, series_code=obj.seriescode,
+                                                       updated_by=obj.updated_by)
 
-                    # add back the void quantity
-                    whseinv = WhseInv.query.filter_by(warehouse=row.whsecode,
-                                                      item_code=row.item_code).first()
-                    whseinv.quantity += row.quantity
+                            # add back the void quantity
+                            whseinv = WhseInv.query.filter_by(warehouse=row.whsecode,
+                                                              item_code=row.item_code).first()
+                            whseinv.quantity += row.quantity
 
-                    # add to session
-                    db.session.add_all([inv_trans, whseinv, cust])
+                            # add to session
+                            db.session.add_all([inv_trans, whseinv, cust])
 
         else:
             continue

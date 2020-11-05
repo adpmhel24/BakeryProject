@@ -18,9 +18,10 @@ class Customer(db.Model):
     whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     balance = db.Column(db.Float, nullable=False, default=0.00)
+    dep_balance = db.Column(db.Float, default=0.00)
     custtype = db.relationship('CustomerType', backref='custtype', lazy=True)
 
 
@@ -33,5 +34,5 @@ class CustomerType(db.Model):
     name = db.Column(db.String(100), nullable=False)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))

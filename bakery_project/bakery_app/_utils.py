@@ -1,6 +1,6 @@
 from flask import jsonify
 from bakery_app.branches.models import Warehouses, Branch
-from bakery_app.master_data.models import (Items, ItemGroup, UnitOfMeasure)
+from bakery_app.items.models import (Items, ItemGroup, UnitOfMeasure)
 
 
 class Check():

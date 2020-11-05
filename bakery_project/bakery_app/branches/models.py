@@ -11,9 +11,9 @@ class Branch(db.Model):
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     created_by = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=False)
+        db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     updated_by = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=False)
+        db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
 
     def __repr__(self):
         return f"Branch('{self.code}', '{self.name}'"
@@ -29,13 +29,17 @@ class Warehouses(db.Model):
                                                     ondelete='NO ACTION', onupdate='NO ACTION'), nullable=False)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id',
+    created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id',
                                                      ondelete='CASCADE'), nullable=False)
-    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     sales = db.Column(db.Boolean, nullable=False, default=False)
+    cutoff = db.Column(db.Boolean, default=False)
 
     def is_sales(self):
         return self.sales
+    
+    def is_cutoff(self):
+        return self.cutoff
 
     def __repr__(self):
         return f"Warehouses('{self.whsecode}', '{self.whsename}'"
@@ -53,9 +57,10 @@ class ObjectType(db.Model):
                       unique=True)  # what table
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    updated_by = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    updated_by = db.Column(
+        db.Integer, db.ForeignKey('tbluser.id'))
     created_by = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=False)
+        db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
 
 
 class Series(db.Model):
@@ -75,7 +80,7 @@ class Series(db.Model):
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     updated_by = db.Column(db.DateTime, nullable=False, default=datetime.now)
     created_by = db.Column(
-        db.Integer, db.ForeignKey('user.id'), nullable=False)
+        db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
     obj_code = db.relationship("ObjectType", backref="series", lazy=True)
 
     def __repr__(self):
