@@ -31,6 +31,7 @@ class DepositSchema(ma.SQLAlchemyAutoSchema):
         ordered = True
         include_fk = True
 
+
 class CashTransactionSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = CashTransaction

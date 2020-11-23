@@ -18,12 +18,11 @@ from bakery_app.payment.payment_schema import PaymentHeaderSchema, PaymentRowSch
 sap_num = Blueprint('sap_num', __name__)
 
 
-
 # GET All Sales for SAP Number Update
 @sap_num.route('/api/sales/for_sap/get_all')
 @token_required
 def sales_update_sap(curr_user):
-    if not curr_user.is_can_add_sap() and not curr_user.is_manager():
+    if not curr_user.is_can_add_sap() and not curr_user.is_manager() and not curr_user.is_admin():
         return ResponseMessage(False, message="Unauthorized user!").resp(), 401
 
     try:
@@ -40,7 +39,7 @@ def sales_update_sap(curr_user):
                 continue
             if k == 'cust_code':
                 filt.append((k, 'like', f'%{v}%'))
-            else:
+            elif v:
                 filt.append((k, '==', v))
 
         sales_filt = BaseQuery.create_query_filter(SalesHeader, filters={'and': filt})
@@ -66,7 +65,6 @@ def sales_update_sap(curr_user):
         result = sales_schema.dump(sales)
         return ResponseMessage(True, count=len(result), data=result).resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
-        print(ex)
         return ResponseMessage(False, message=f'{err}').resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f'{err}').resp(), 500
@@ -80,8 +78,6 @@ def update_sales_sap_num(curr_user):
         data = request.get_json()
         sap_number = data['sap_number']
         remarks = data['remarks']
-        # ids = request.args.get('ids').rstrip(']').lstrip('[')
-        # ids = list(ids.split(','))
         ids = data['ids']
         filt_sales_h = [('id', 'in', ids)]
         sales_filt = BaseQuery.create_query_filter(SalesHeader, filters={'and': filt_sales_h})
@@ -100,28 +96,44 @@ def update_sales_sap_num(curr_user):
 
 
 # Get The total quantity for SAP Number
-@sap_num.route('/api/sales/for_sap/get_total')
+# @sap_num.route('/api/sales/for_sap/get_total')
+# @token_required
+# def get_sales_total_for_sap(curr_user):
+#     try:
+#         ids = request.args.get('ids').rstrip(']').lstrip('[')
+#         ids = list(ids.split(','))
+#         filt_sales_h = [('sales_id', 'in', ids)]
+#         sales_filt = BaseQuery.create_query_filter(SalesRow, filters={'and': filt_sales_h})
+#         sales_row = db.session.query(
+#                 SalesRow.item_code, 
+#                 func.sum(SalesRow.quantity).label('quantity')
+#             ).filter(*sales_filt
+#             ).group_by(SalesRow.item_code
+#             ).all()
+#         row_schema = SalesRowSchema(many=True)
+#         result = row_schema.dump(sales_row)
+#         return ResponseMessage(True, count=len(result), data=result).resp()
+#     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+#             return ResponseMessage(False, message=f'{err}').resp(), 500
+#     except Exception as err:
+#         return ResponseMessage(False, message=f'{err}').resp(), 500
+
+
+# Get Payments for SAP number
+@sap_num.route('/api/payment/for_sap/get_all')
 @token_required
-def get_sales_total_for_sap(curr_user):
+def get_payment_for_sap(curr_user):
+    if not curr_user.is_can_add_sap() and not curr_user.is_manager() and not curr_user.is_admin():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
     try:
-        ids = request.args.get('ids').rstrip(']').lstrip('[')
-        ids = list(ids.split(','))
-        filt_sales_h = [('sales_id', 'in', ids)]
-        sales_filt = BaseQuery.create_query_filter(SalesRow, filters={'and': filt_sales_h})
-        sales_row = db.session.query(
-                SalesRow.item_code, 
-                func.sum(SalesRow.quantity).label('quantity')
-            ).filter(*sales_filt
-            ).group_by(SalesRow.item_code
-            ).all()
-        row_schema = SalesRowSchema(many=True)
-        result = row_schema.dump(sales_row)
-        return ResponseMessage(True, count=len(result), data=result).resp()
+        data = request.args.to_dict()
+        filts = []
+
+
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
-            return ResponseMessage(False, message=f'{err}').resp(), 500
+        return ResponseMessage(False, message=f'{err}').resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f'{err}').resp(), 500
 
-
-# GET All Sales Confirm and has SAP Number
 

@@ -16,7 +16,7 @@ from bakery_app._utils import Check, ResponseMessage
 from .models import (PaymentType, PayTransHeader,
                      PayTransRow, Deposit, CashTransaction, CashOut)
 from .payment_schema import (
-    PaymentHeaderSchema, PaymentRowSchema, PaymentTypeSchema, DepositSchema)
+    PaymentHeaderSchema, PaymentRowSchema, PaymentTypeSchema, DepositSchema, CashTransactionSchema)
 
 payment = Blueprint('payment', __name__)
 
@@ -139,6 +139,7 @@ def new_deposit(curr_user):
     data = request.get_json()
     data['created_by'] = curr_user.id
     data['updated_by'] = curr_user.id
+
     try:
         obj = ObjectType.query.filter_by(code='DEPS').first()
         series = Series.query.filter_by(
@@ -196,7 +197,7 @@ def get_all_deposit(curr_user):
 
         dep = db.session.query(Deposit).filter(*dep_filter).all()
         dep_schema = DepositSchema(many=True,
-                                          exclude=("date_created", "date_updated", "created_by", "updated_by"))
+                                   exclude=("date_created", "date_updated", "created_by", "updated_by"))
         result = dep_schema.dump(dep)
         return ResponseMessage(True, count=len(result), data=result).resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
@@ -300,26 +301,27 @@ def payment_new(curr_user):
 
             if date_created:
                 sales = db.session.query(SalesHeader).join(SalesRow). \
-                    join(Warehouses, Warehouses.whsecode == SalesRow.whsecode).filter(and_(Warehouses.branch == curr_user.branch,
-                                func.cast(SalesHeader.date_created, DATE) == date_created,
-                                or_(and_(SalesHeader.confirm != True, SalesHeader.transtype =='CASH'),
-                                and_(SalesHeader.confirm == True, SalesHeader.transtype !='CASH')),
-                                *sales_filter)).all()
+                    join(Warehouses, Warehouses.whsecode == SalesRow.whsecode).filter(
+                    and_(Warehouses.branch == curr_user.branch,
+                         func.cast(SalesHeader.date_created, DATE) == date_created,
+                         or_(and_(SalesHeader.confirm != True, SalesHeader.transtype == 'CASH'),
+                             and_(SalesHeader.confirm == True, SalesHeader.transtype != 'CASH')),
+                         *sales_filter)).all()
             else:
                 sales = db.session.query(SalesHeader).join(SalesRow). \
-                    join(Warehouses, Warehouses.whsecode == SalesRow.whsecode)\
-                        .filter(and_(Warehouses.branch == curr_user.branch,
-                                or_(and_(SalesHeader.confirm != True, SalesHeader.transtype =='CASH'),
-                                and_(SalesHeader.confirm == True, SalesHeader.transtype !='CASH')),
-                                *sales_filter)).all()
-
+                    join(Warehouses, Warehouses.whsecode == SalesRow.whsecode) \
+                    .filter(and_(Warehouses.branch == curr_user.branch,
+                                 or_(and_(SalesHeader.confirm != True, SalesHeader.transtype == 'CASH'),
+                                     and_(SalesHeader.confirm == True, SalesHeader.transtype != 'CASH')),
+                                 *sales_filter)).all()
 
             sales_schema = SalesHeaderSchema(many=True, only=("id", "docstatus", "seriescode",
                                                               "transnumber", "reference", "transdate", "cust_code",
                                                               "cust_name", "objtype", "remarks", "transtype", "delfee",
                                                               "disctype", "discprcnt", "disc_amount", "gross",
                                                               "gc_amount", "doctotal", "reference2", "tenderamt",
-                                                              "sap_number", "appliedamt", "amount_due", "void", "created_user", "confirm"))
+                                                              "sap_number", "appliedamt", "amount_due", "void",
+                                                              "created_user", "confirm"))
             result = sales_schema.dump(sales)
             return ResponseMessage(True, count=len(result), data=result).resp()
 
@@ -381,7 +383,6 @@ def payment_new(curr_user):
                 # payment details
                 for row in details:
                     row['payment_id'] = payment.id
-                    pay_row = PayTransRow(**row)
 
                     # check if is deposit
                     if row['payment_type'] in ['FDEPS']:
@@ -394,20 +395,28 @@ def payment_new(curr_user):
                         # check if the Deposit is not open.
                         if dep.status != 'O':
                             raise Exception('Deposit already closed!')
+
+                    pay_row = PayTransRow(**row)
                     pay_row.created_by = curr_user.id
                     pay_row.updated_by = curr_user.id
-                    db.session.add(pay_row)
-                    db.session.flush()
 
-                
-                if sales.transtype == 'CASH' and sales_amount_due != payment.total_paid:
-                    print(sales_amount_due, payment.total_paid)
-                    raise Exception(f"Can't add transaction {payment.reference} because " \
-                                    "amount due is less than or greater than amount paid!")
-                
-                if sales_amount_due > payment.total_paid:
-                    raise Exception(f"Can't add transaction {payment.reference} because \
-                                    amount due is greater than amount paid!")
+                    # update the Payment Header
+                    payment.total_paid += pay_row.amount
+
+                    db.session.add(pay_row)
+                if sales.transtype == 'CASH':
+                    if sales_amount_due > payment.total_paid:
+                        raise Exception(f"Can't add transaction {payment.reference} because "
+                                        "amount payable is greater than total payment!")
+                                        
+                if payment.total_paid < 0:
+                    raise Exception(f"Can't add transaction {payment.reference} because "
+                                        "total payment is less than or equal to 0.")
+
+                if payment.total_paid > sales_amount_due:
+                    raise Exception(f"Can't add transaction {payment.reference} because "
+                                    "paid amount is greater than amount due!")
+                                    
                 db.session.commit()
             return ResponseMessage(True, message="Successfully added!").resp()
         except (pyodbc.IntegrityError, exc.IntegrityError) as err:
@@ -420,8 +429,24 @@ def payment_new(curr_user):
             db.session.close()
 
 
+# Get Payment Details
+@payment.route('/api/payment/details/<int:id>')
+@token_required
+def payment_details(curr_user, id):
+    try:
+        pay_details = PayTransHeader.query.get(id)
+
+        payment_schema = PaymentHeaderSchema()
+        result = payment_schema.dump(pay_details)
+        return ResponseMessage(True, count=len(result), data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
 # Void Payment
-@payment.route('/api/cancel/void/<int:id>', methods=['PUT'])
+@payment.route('/api/payment/void/<int:id>', methods=['PUT'])
 @token_required
 def void_payment(curr_user, id):
     if not curr_user.is_admin() and not curr_user.is_manager():
@@ -448,14 +473,13 @@ def void_payment(curr_user, id):
         return ResponseMessage(False, message=f"{err}").resp(), 500
 
 
-
 # Create Cash Out
 @payment.route('/api/cashout/new', methods=['POST'])
 @token_required
 def create_cashout(curr_user):
     if not curr_user.is_admin() and not curr_user.is_manager():
         return ResponseMessage(False, message="Unauthorized user!").resp(), 401
-    
+
     try:
         data = request.get_json()
         data['created_by'] = curr_user.id
@@ -474,7 +498,7 @@ def create_cashout(curr_user):
         data['transnumber'] = series.next_num
         data['reference'] = f"{series.code}-{obj.code}-{series.next_num}"
         data['objtype'] = obj.objtype
-        
+
         cash_out = CashOut(**data)
 
         # add plus 1 to series
@@ -483,10 +507,9 @@ def create_cashout(curr_user):
         db.session.add_all([cash_out, series])
         db.session.commit()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
-        return ResponseMessage(False, message=f"{err}").resp(), 500 
+        return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
-
 
 
 # Get All Cash Out
@@ -498,7 +521,7 @@ def get_all_cashout(curr_user):
         filt = []
         if transnum:
             filt.append(('trans_num', 'like', f'%{transnum}%'))
-        
+
         query_filter = BaseQuery.create_query_filter(CashTransaction, filters={'and': filt})
         cash_out = CashTransaction.query.filter(*query_filter).all()
         cash_out_schema = CashTransactionSchema(many=True)
@@ -508,6 +531,7 @@ def get_all_cashout(curr_user):
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
+
 
 # Get Cash Out Details
 @payment.route('/api/cashout/details/<int:id>')
@@ -532,7 +556,7 @@ def get_cashout_details(curr_user, id):
 def cancel_cashout(curr_user, id):
     if not curr_user.is_admin():
         return ResponseMessage(False, message="Unauthorized user!").resp()
-    
+
     try:
         cash_out = CashTransaction.query.get(id)
         if not cash_out:
@@ -568,12 +592,12 @@ def get_sales_for_payment(curr_user):
 
         # sales header query
         sales_h_query = db.session.query(func.sum(SalesHeader.delfee).label('delfee'),
-            func.sum(SalesHeader.disc_amount).label('disc_amount'),
-            func.sum(SalesHeader.gross).label('gross'),
-            func.sum(SalesHeader.doctotal).label('doctotal'),
-            func.sum(SalesHeader.tenderamt).label('tenderamt'),
-            func.sum(SalesHeader.change).label('change'),
-            func.sum(SalesHeader.amount_due).label('amount_due'))\
+                                         func.sum(SalesHeader.disc_amount).label('disc_amount'),
+                                         func.sum(SalesHeader.gross).label('gross'),
+                                         func.sum(SalesHeader.doctotal).label('doctotal'),
+                                         func.sum(SalesHeader.tenderamt).label('tenderamt'),
+                                         func.sum(SalesHeader.change).label('change'),
+                                         func.sum(SalesHeader.amount_due).label('amount_due')) \
             .filter(*sales_h_filter) \
             .first()
 
@@ -596,8 +620,40 @@ def get_sales_for_payment(curr_user):
         result_header = sales_h_schema.dump(sales_h_query)
         result_row = sales_r_schema.dump(sales_r_query)
 
-        return ResponseMessage(True, data={"header": result_header, "row": result_row}).resp()
+        return ResponseMessage(True, count=len(result_row), data={"header": result_header, "row": result_row}).resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Sales Header Count
+@payment.route('/api/sales/count')
+@token_required
+def count_for_payment_sales(curr_user):
+    try:
+        transdate = request.args.get('transdate')
+        for_payment = db.session.query(SalesHeader
+                                       ).filter(
+            and_(func.cast(SalesHeader.transdate, DATE) == transdate,
+                 or_(and_(SalesHeader.confirm == True, SalesHeader.transtype != 'CASH'),
+                     and_(SalesHeader.confirm != True, SalesHeader.transtype == 'CASH')),
+                 SalesHeader.docstatus == 'O'
+                 )
+        ).count()
+        for_confirmation = db.session.query(SalesHeader
+                                            ).filter(
+            and_(func.cast(SalesHeader.transdate, DATE) == transdate,
+                 SalesHeader.confirm != True,
+                 SalesHeader.transtype != 'CASH',
+                 SalesHeader.docstatus == 'O'
+                 )
+        ).count()
+
+        return ResponseMessage(True, data={"for_payment": for_payment, "for_confirmation": for_confirmation}).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    finally:
+        db.session.close()

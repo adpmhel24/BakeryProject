@@ -10,13 +10,15 @@ class SalesHeader(db.Model):
     __tablename__ = "tblsales"
 
     id = db.Column(db.Integer, primary_key=True)
+    series = db.Column(db.Integer, db.ForeignKey('tblseries.id',
+                                                 ondelete='NO ACTION', onupdate='NO ACTION'))  # series id
     docstatus = db.Column(db.String(30), default='O')
     seriescode = db.Column(db.String(50), nullable=False)
     transnumber = db.Column(db.Integer, nullable=False)
     reference = db.Column(db.String(100))
     transdate = db.Column(db.DateTime, nullable=False, default=datetime.now)
-    cust_code = db.Column(db.String(100), db.ForeignKey('tblcustomer.code', ondelete='CASCADE', onupdate='CASCADE'),
-                          nullable=False)
+    cust_code = db.Column(db.String(100), db.ForeignKey('tblcustomer.code',
+                                                        ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
     cust_name = db.Column(db.String(100), nullable=False)
     objtype = db.Column(db.Integer, db.ForeignKey('tblobjtype.objtype'),
                         nullable=False)
@@ -44,7 +46,9 @@ class SalesHeader(db.Model):
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     confirm = db.Column(db.Boolean, default=False)
     date_confirm = db.Column(db.DateTime, default=datetime.now)
-    confirm_by = db.Column(db.Integer) # user id
+    confirm_by = db.Column(db.Integer)  # user id
+    latitude = db.Column(db.Float)
+    longitude = db.Column(db.Float)
 
     created_user = db.relationship("User", backref="salesheader", foreign_keys=[created_by])
 
@@ -119,19 +123,8 @@ def sales_insert_event(*args):
     for obj in sess.new:
 
         if isinstance(obj, SalesRow):
-            sales = SalesHeader.query.filter_by(id=obj.sales_id).first()
+            sales = SalesHeader.query.get(obj.sales_id)
             cust = Customer.query.filter_by(code=sales.cust_code).first()
-
-            # update the sales header
-            sales.gross += obj.gross
-            sales.disc_amount = sales.gross * (sales.discprcnt / 100) + obj.disc_amount
-            sales.doctotal = sales.delfee + sales.gross - sales.disc_amount - sales.gc_amount
-            sales.amount_due = sales.doctotal
-
-            sales.row_discount += obj.disc_amount
-
-            if sales.tenderamt >= sales.amount_due:
-                sales.change = sales.tenderamt - sales.amount_due
 
             cust.balance += sales.amount_due
 
@@ -149,7 +142,7 @@ def sales_insert_event(*args):
             whseinv = WhseInv.query.filter_by(warehouse=obj.whsecode, item_code=obj.item_code).first()
             whseinv.quantity -= obj.quantity
 
-            db.session.add_all([sales, inv_trans, whseinv, cust])
+            db.session.add_all([inv_trans, whseinv, cust])
 
         else:
             continue
@@ -167,7 +160,7 @@ def sales_update_event(*args):
             changes = get_model_changes(obj)
             for i in changes:
                 if i == 'void':
-                    if changes[i][1] == True:
+                    if changes[i][1]:
                         salesrow = SalesRow.query.filter(SalesRow.sales_id == obj.id).all()
 
                         # Update Customer Balance

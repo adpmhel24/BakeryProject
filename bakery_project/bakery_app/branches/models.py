@@ -1,5 +1,8 @@
 from datetime import datetime
+from sqlalchemy import event
 from bakery_app import db
+from bakery_app.items.models import Items
+from bakery_app.inventory.models import WhseInv
 
 
 class Branch(db.Model):
@@ -32,8 +35,9 @@ class Warehouses(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id',
                                                      ondelete='CASCADE'), nullable=False)
     updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
-    sales = db.Column(db.Boolean, nullable=False, default=False)
+    sales = db.Column(db.Boolean, nullable=True, default=False)
     cutoff = db.Column(db.Boolean, default=False)
+    pricelist = db.Column(db.Integer, db.ForeignKey('tblpricelist.id', ondelete='CASCADE'), nullable=True)
 
     def is_sales(self):
         return self.sales
@@ -86,3 +90,19 @@ class Series(db.Model):
     def __repr__(self):
         return f"Series('{self.code}', '{self.name}', '{self.objtype}', \
             '{self.start_num}', '{self.next_num}', '{self.end_num}'"
+
+
+@event.listens_for(db.session, "after_flush")
+def insert_update(*args):
+    sess = args[0]
+    for obj in sess.new:
+
+        # Insert Warehouse to WhseInv
+        if isinstance(obj, Warehouses):
+            items = Items.query.all()
+            for i in items:
+                whseinv = WhseInv(item_code=i.item_code, warehouse=obj.whsecode,
+                                  created_by=obj.created_by, updated_by=obj.updated_by)
+                db.session.add(whseinv)
+        else:
+            continue

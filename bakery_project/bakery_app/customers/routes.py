@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import exc
 from flask import Blueprint, request, jsonify
 from bakery_app import db, auth
+from bakery_app._helpers import BaseQuery
 from bakery_app._utils import status_response, ResponseMessage
 from bakery_app.users.routes import token_required
 
@@ -29,8 +30,7 @@ def create_customer(curr_user):
         cust = Customer(**data)
         db.session.add(cust)
         db.session.commit()
-        cust_schema = CustomerSchema(exclude=("date_created", "date_updated",
-                                              "created_by", "updated_by"))
+        cust_schema = CustomerSchema()
         result = cust_schema.dump(cust)
         return ResponseMessage(True, message="Successfully added!", data=result).resp()
     except Exception as err:
@@ -47,9 +47,33 @@ def create_customer(curr_user):
 @token_required
 def get_all_customer(curr_user):
     try:
-        customers = Customer.query.all()
+        data = request.args.to_dict()
+        if 'transtype' in data:
+            if data['transtype'].upper() == 'SALES':
+                filt = []
+                filt_cust_type = []
+                # add to filter list if the user is allow to cash sales
+                if curr_user.is_sales() and curr_user.is_cash_sales() and not curr_user.is_ar_sales():
+                    filt.append(('whse', '==', curr_user.whse))
+                    filt_cust_type.append(3) # Customer Type Cash Sales
+                    
+                # add to filter list if the user is allow to agent sales
+                if curr_user.is_sales() and curr_user.is_agent_sales() and not curr_user.is_ar_sales():
+                    filt.append(('whse', '==', curr_user.whse))
+                    filt_cust_type.append(4) # Customer Type Agent AR Sales
 
-        cust_schema = CustomerSchema(many=True, only=("id", "code", "name", "balance"))
+                # add to filter list if the user is allow to ar sales
+                if curr_user.is_sales() and curr_user.is_ar_sales():
+                    filt_cust_type.append(1) # Customer Type Customers
+                
+                if filt_cust_type:
+                    filt.append(('cust_type', 'in', filt_cust_type))
+
+                cust_filter = BaseQuery.create_query_filter(Customer, filters={'and': filt})
+                customers = db.session.query(Customer).filter(*cust_filter).all()
+        else:
+            customers = db.session.query(Customer).all()
+        cust_schema = CustomerSchema(many=True)
         result = cust_schema.dump(customers)
         return ResponseMessage(True, count=len(result), data=result).resp()
 
@@ -78,8 +102,7 @@ def create_custtype(curr_user):
         db.session.add(custtype)
         db.session.commit()
 
-        custype_schema = CustTypeSchema(exclude=("date_created", "date_updated", \
-                                                 "created_by", "updated_by"))
+        custype_schema = CustTypeSchema()
         result = custype_schema.dump(custtype)
         return ResponseMessage(True, message="Successfully added!", data=result).resp()
 

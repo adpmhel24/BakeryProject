@@ -7,6 +7,10 @@ from bakery_app import db
 from bakery_app._helpers import BaseQuery
 from bakery_app._utils import Check, ResponseMessage
 from bakery_app.users.routes import token_required
+from bakery_app.sales.models import SalesHeader, SalesRow
+from bakery_app.inventory_count.models import CountingInventoryHeader, CountingInventoryRow
+from bakery_app.pullout.models import PullOutHeaderRequest, PullOutRowRequest
+
 
 from .branch_schema import (BranchSchema, WarehouseSchema,
                             SeriesSchema, ObjectTypeSchema)
@@ -63,19 +67,29 @@ def new_warehouse(curr_user):
         db.session.close()
 
 
+
 # Get All Warehouse
 @branches.route('/api/whse/get_all')
 @token_required
 def get_all_whse(curr_user):
     try:
-        branch = request.args.get('branch')
+        data = request.args.to_dict()
+        
         filt = []
-        if branch:
-            filt.append(('branch', '==', branch))
+        if 'transtype' in data:
+            transtype = data['transtype']
+            if transtype.upper() == 'TRFR':
+                filt.append(('whsecode', '!=', curr_user.whse))
+        if 'branch' in data:
+            filt.append(('branch', '==', data['branch']))
+        
+        if 'whsecode' in data:
+            filt.append(('whsecode', '==', data['whsecode']))
+        
 
         branch_filter = BaseQuery.create_query_filter(Warehouses, filters={'and_': filt})
         warehouses = db.session.query(Warehouses).filter(*branch_filter).all()
-        whse_schema = WarehouseSchema(many=True, only=("id", "whsecode", "whsename", "branch",))
+        whse_schema = WarehouseSchema(many=True)
         result = whse_schema.dump(warehouses)
         return ResponseMessage(True, data=result).resp()
     except (pyodbc.IntegrityError, IntegrityError) as err:
@@ -159,6 +173,76 @@ def delete_whse(curr_user, id):
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Warehouse Cutoff
+@branches.route('/api/whse/cutoff/<int:id>', methods=['PUT'])
+@token_required
+def whse_cutoff(curr_user, id):
+    if not curr_user.is_manager() and not curr_user.is_admin():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+    
+    status = request.json['cutoff']
+
+    try:
+        whse = Warehouses.query.get(id)
+        if status == True:
+            if whse.cutoff:
+                return ResponseMessage(False, message="Cutoff is already enable!").resp(), 401
+            else:
+                sales = SalesHeader.query.filter(
+                    and_(SalesHeader.docstatus != 'N', 
+                        SalesHeader.confirm != True,
+                        SalesRow.whsecode == curr_user.whse)
+                     ).first()
+                # check if there's a sales that need to confirm if yes then return error message
+                if sales:
+                   return ResponseMessage(False, message=f"Please confirm {sales.reference}").resp(), 401
+                else:
+                    pending_inv_count = CountingInventoryHeader.query. \
+                    filter(CountingInventoryRow.whsecode == curr_user.whse,
+                                CountingInventoryHeader.confirm == False).first()
+                    pending_po_count = PullOutHeaderRequest.query. \
+                            filter(PullOutRowRequest.whsecode == curr_user.whse,
+                                    PullOutHeaderRequest.confirm == False).first()
+                    
+                    if pending_inv_count:
+                        raise Exception("You have inventory count to confirm!")
+                    if pending_po_count:
+                        raise Exception("You have pullout count to confirm!")
+                    
+                    whse.cutoff = status
+                    db.session.commit()
+                    return ResponseMessage(True, message="Cuttoff is now enable!").resp()
+        elif status == False:
+
+            if not whse.cutoff:
+                return ResponseMessage(False, message="Cutoff is already disable!").resp(), 401
+            else:
+                pending_inv_count = CountingInventoryHeader.query. \
+                    filter(CountingInventoryRow.whsecode == curr_user.whse,
+                            CountingInventoryHeader.confirm == False).first()
+                pending_po_count = PullOutHeaderRequest.query. \
+                        filter(PullOutRowRequest.whsecode == curr_user.whse,
+                                PullOutHeaderRequest.confirm == False).first()
+                
+                if pending_inv_count:
+                    raise Exception("You have inventory count to confirm!")
+                if pending_po_count:
+                    raise Exception("You have pullout count to confirm!")
+
+                whse.cutoff = status
+                db.session.commit()
+                return ResponseMessage(True, message="Cuttoff is now disable!").resp()
+        
+        
+  
+    except (pyodbc.IntegrityError, IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    finally:
+        db.session.close()
 
 
 # Get Branch Warehouse
@@ -263,17 +347,19 @@ def update_branch(curr_user, id):
 
     branch = Branch.query.get(id)
 
+    data = request.get_json()
+
     if not branch:
         return ResponseMessage(False, message="Invalid branch id!").resp(), 401
 
-    if request.args.get('code'):
-        branch.code = request.args.get('code')
+    if 'code' in data:
+        branch.code = data['code']
 
-    if request.args.get('name'):
-        branch.name = request.args.get('name')
+    if 'name' in data:
+        branch.name = data['name']
 
     branch.updated_by = curr_user.id
-    branch.date_updated = datetime.now
+    branch.date_updated = datetime.now()
 
     try:
         db.session.commit()

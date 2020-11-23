@@ -146,7 +146,7 @@ def get_all_users(curr_user):
 @token_required
 def get_user(curr_user, id):
     user = curr_user
-    if not user.is_admin() or not curr_user.is_manager():
+    if not user.is_admin() and not curr_user.is_manager():
         return ResponseMessage(False, message="Unauthorized user!").resp(), 401
 
     try:

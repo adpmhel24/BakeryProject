@@ -31,3 +31,16 @@ class SalesHeaderSchema(ma.SQLAlchemyAutoSchema):
 
     salesrow = ma.Nested(SalesRowSchema, many=True)
     created_user = ma.Nested(UserSchema, only=("username",))
+
+    cashsales = ma.Number()
+    arsales = ma.Number()
+    agentsales = ma.Number()
+    user = ma.String()
+
+    def dump(self, *args, **kwargs):
+        special = kwargs.pop('special', None)
+        _partial = super(SalesHeaderSchema, self).dump(*args, **kwargs)
+        if special is not None and all(f in _partial for f in special):
+            for field in special:
+                _partial['_{}'.format(field)] = _partial.pop(field)
+        return _partial

@@ -22,21 +22,23 @@ class User(db.Model, UserMixin):
     date_updated = db.Column(db.DateTime, default=datetime.now)
     branch = db.Column(db.String(50))  # branch code
     whse = db.Column(db.String(100))  # whsecode
-    admin = db.Column(db.Boolean, default=False)
-    sales = db.Column(db.Boolean, default=False)
-    cashier = db.Column(db.Boolean, default=False)
-    manager = db.Column(db.Boolean, default=False)
-    can_add_sap = db.Column(db.Boolean, default=False)
-    transfer = db.Column(db.Boolean, default=False)
-    receive = db.Column(db.Boolean, default=False)
-    void = db.Column(db.Boolean, default=False)
-    discount = db.Column(db.Boolean, default=False)
-    auditor = db.Column(db.Boolean, default=False)
-    ar_sales = db.Column(db.Boolean, default=False)
-    cash_sales = db.Column(db.Boolean, default=False)
-    agent_sales = db.Column(db.Boolean, default=False)
-    active = db.Column(db.Boolean, default=True)
-    
+    isAdmin = db.Column(db.Boolean, default=False)
+    isManager = db.Column(db.Boolean, default=False)
+    isAuditor = db.Column(db.Boolean, default=False)
+    isSales = db.Column(db.Boolean, default=False)
+    isCashier = db.Column(db.Boolean, default=False)
+    isChecker = db.Column(db.Boolean, default=False)
+    isCanAddSap = db.Column(db.Boolean, default=False)
+    isTransfer = db.Column(db.Boolean, default=False)
+    isReceive = db.Column(db.Boolean, default=False)
+    isVoid = db.Column(db.Boolean, default=False)
+    isDiscount = db.Column(db.Boolean, default=False)
+    isAllowEnding = db.Column(db.Boolean, default=False)
+    isAllowPullOut = db.Column(db.Boolean, default=False)
+    isARSales = db.Column(db.Boolean, default=False)
+    isCashSales = db.Column(db.Boolean, default=False)
+    isAgentSales = db.Column(db.Boolean, default=False)
+    isActive = db.Column(db.Boolean, default=True)
 
     def hash_password(self, password):
         self.password = bcrypt.generate_password_hash(password).decode('utf-8')
@@ -50,46 +52,55 @@ class User(db.Model, UserMixin):
         return s.dumps({'user_id': self.id}).decode('utf-8')
 
     def is_admin(self):
-        return self.admin
+        return self.isAdmin
 
     def is_manager(self):
-        return self.manager
+        return self.isManager
 
     def is_sales(self):
-        return self.sales
+        return self.isSales
 
     def is_cashier(self):
-        return self.cashier
+        return self.isCashier
+
+    def is_checker(self):
+        return self.isChecker
 
     def is_can_add_sap(self):
-        return self.can_add_sap
+        return self.isCanAddSap
 
     def can_transfer(self):
-        return self.transfer
+        return self.isTransfer
 
     def can_receive(self):
-        return self.receive
+        return self.isReceive
 
     def can_void(self):
-        return self.void
-
-    def is_active(self):
-        return self.void
+        return self.isVoid
 
     def can_discount(self):
-        return self.discount
+        return self.isDiscount
 
     def is_auditor(self):
-        return self.auditor
+        return self.isAuditor
 
     def is_ar_sales(self):
-        return self.ar_sales
+        return self.isARSales
     
     def is_cash_sales(self):
-        return self.cash_sales
+        return self.isCashSales
 
     def is_agent_sales(self):
-        return self.agent_sales
+        return self.isAgentSales
+
+    def is_allow_ending(self):
+        return self.isAllowEnding
+
+    def is_allow_pullout(self):
+        return self.isAllowPullOut
+
+    def is_active(self):
+        return self.isActive
 
     @staticmethod
     def verify_auth_token(token):

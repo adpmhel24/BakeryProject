@@ -38,9 +38,13 @@ def create_app(config_class=Config):
     from bakery_app.customers.routes import customers
     from bakery_app.sales.routes import sales
     from bakery_app.payment.routes import payment
+    from bakery_app.pullout.routes import pullout
+    from bakery_app.inventory_count.routes import inventory_count
+    from bakery_app.inventory_adjustment.routes import inventory_adjustment
     from bakery_app.sapb1.routes import sapb1
     from bakery_app.sap_num.routes import sap_num
     from bakery_app.reports.routes import reports
+    from bakery_app.item_request.routes import item_request
 
     app.register_blueprint(users) 
     app.register_blueprint(items)
@@ -49,8 +53,12 @@ def create_app(config_class=Config):
     app.register_blueprint(customers)
     app.register_blueprint(sales)
     app.register_blueprint(payment)
+    app.register_blueprint(pullout)
+    app.register_blueprint(inventory_count)
+    app.register_blueprint(inventory_adjustment)
     app.register_blueprint(sapb1)
     app.register_blueprint(sap_num)
     app.register_blueprint(reports)
+    app.register_blueprint(item_request)
 
     return app

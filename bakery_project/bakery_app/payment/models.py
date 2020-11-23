@@ -21,7 +21,7 @@ class PayTransHeader(db.Model):
     reference = db.Column(db.String(100), nullable=False)
     transdate = db.Column(db.DateTime, nullable=False)
     base_id = db.Column(db.Integer, db.ForeignKey(
-        'tblsales.id', ondelete='NO ACTION'))  # sales id
+        'tblsales.id', ondelete='CASCADE'))  # sales id
     base_num = db.Column(db.Integer)  # sales transnum
     # C for Close, N for Cancel
     docstatus = db.Column(db.String(10), default='C')
@@ -59,7 +59,7 @@ class PayTransRow(db.Model):
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
     status = db.Column(db.Integer, default=1)  # 1 if not cancel, 2 if canceled
-    reference = db.Column(db.String(100))
+    reference2 = db.Column(db.String(100))
     sap_number = db.Column(db.Integer)
     payheader = db.relationship(
         'PayTransHeader', back_populates='payrows', lazy=True)
@@ -99,7 +99,7 @@ class Deposit(db.Model):
     amount = db.Column(db.Float, nullable=False, default=0.00)
     balance = db.Column(db.Float, nullable=False, default=0.00)
     remarks = db.Column(db.String(250))
-    reference = db.Column(db.String(100))
+    reference2 = db.Column(db.String(100))
     sap_number = db.Column(db.Integer)
     created_by = db.Column(
         db.Integer, db.ForeignKey('tbluser.id'), nullable=False)
@@ -164,8 +164,6 @@ def payment_before_flush(*args):
             cust = Customer.query.filter_by(code=pay_header.cust_code).first()
             sales = SalesHeader.query.filter_by(id=pay_header.base_id).first()
 
-            # update the Payment Header
-            pay_header.total_paid += obj.amount
             # Update Sales Amount Due and Sales Applied Amount
             sales.amount_due -= obj.amount
             sales.appliedamt += obj.amount
@@ -180,7 +178,6 @@ def payment_before_flush(*args):
                 # update the customer deposit balance
                 customer = Customer.query.filter_by(code=dep.cust_code).first()
                 customer.dep_balance -= obj.amount
-                
 
                 # if the deposit balance is 0 then close the status
                 if dep.balance == 0:
@@ -190,7 +187,7 @@ def payment_before_flush(*args):
 
             if sales.amount_due == 0:
                 sales.docstatus = 'C'
-            
+
             sales.confirm = True
 
             # Add to Cash Transaction
@@ -204,7 +201,13 @@ def payment_before_flush(*args):
                                          created_by=pay_header.created_by,
                                          updated_by=pay_header.updated_by)
 
-            db.session.add_all([pay_header, cust, sales, cash_trans])
+            db.session.add_all([cust, sales, cash_trans])
+
+
+        elif isinstance(obj, Deposit):
+            customer = Customer.query.filter_by(code=obj.cust_code).first()
+            customer.dep_balance += obj.amount
+            db.session.add(customer)
 
         else:
             continue
@@ -315,8 +318,6 @@ def after_flush_event(*args):
 
         # Add to cash transaction
         if isinstance(obj, Deposit):
-            customer = Customer.query.filter_by(code=obj.cust_code).first()
-            customer.dep_balance += obj.amount
             cash_trans = CashTransaction(trans_id=obj.id,
                                          trans_num=obj.transnumber,
                                          transdate=obj.transdate,
@@ -326,7 +327,7 @@ def after_flush_event(*args):
                                          transtype='DEPS',
                                          created_by=obj.created_by,
                                          updated_by=obj.updated_by)
-            db.session.add_all([cash_trans, customer])
+            db.session.add(cash_trans)
 
 
         # Add to cash transaction

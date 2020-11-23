@@ -1,5 +1,5 @@
 from bakery_app import ma
-from .models import (Items, ItemGroup, UnitOfMeasure)
+from .models import Items, ItemGroup, UnitOfMeasure, PriceListHeader, PriceListRow
 
 
 class ItemsSchema(ma.SQLAlchemySchema):
@@ -39,7 +39,22 @@ class UomSchema(ma.SQLAlchemySchema):
     id = ma.auto_field()
     code = ma.auto_field()
     description = ma.auto_field()
-    date_create = ma.auto_field()
+    date_created = ma.auto_field()
     date_updated = ma.auto_field()
     created_by = ma.auto_field()
     updated_by = ma.auto_field()
+
+
+class PriceListHeaderSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = PriceListHeader
+        ordered = True
+        include_fk = True
+
+
+class PriceListRowSchema(ma.SQLAlchemyAutoSchema):
+    class Meta:
+        model = PriceListRow
+        ordered = True
+        include_fk = True
+

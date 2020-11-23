@@ -59,9 +59,18 @@ def new_sales(curr_user):
             data['header']['cust_code'] = cust.code
             data['header']['cust_name'] = cust.name
 
+        if data['header']['transtype'].upper() == 'AGENT AR SALES':
+            cust = db.session.query(Customer). \
+                filter(and_(Customer.whse == curr_user.whse, Customer.code.contains('AR Sales'))).first()
+            data['header']['cust_code'] = cust.code
+            data['header']['cust_name'] = cust.name
+
         # check if the header has discount and user is allowed to add discount
         if data['header']['discprcnt'] and not curr_user.can_discount():
             raise Exception("You're not allowed to add discount!")
+
+        if not Customer.query.filter_by(code=data['header']['cust_code']).first():
+            raise Exception("Invalid Customer Code")
         
         # add 1 to series
         series.next_num += 1
@@ -105,7 +114,17 @@ def new_sales(curr_user):
 
             s_r = SalesRow(**row)
 
+            sales.gross += float(s_r.gross)
+            sales.row_discount += s_r.disc_amount
+
             db.session.add(s_r)
+
+        sales.disc_amount = sales.gross * (sales.discprcnt / 100) + sales.row_discount
+        sales.doctotal = sales.gross + sales.delfee - sales.disc_amount - sales.gc_amount
+        sales.amount_due = sales.doctotal
+
+        if sales.tenderamt > sales.amount_due:
+            sales.change = sales.tenderamt - sales.amount_due
 
         db.session.commit()
         sales_schema = SalesHeaderSchema()
@@ -214,7 +233,6 @@ def sales_void(curr_user):
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
-
 
 
 # GET AR Sales for confirm
@@ -357,16 +375,13 @@ def get_all_sales_type(curr_user):
                 filt_in.append('CASH')
             if curr_user.is_agent_sales():
                 filt_in.append('Agent AR Sales')
-        if not curr_user.is_admin() and not curr_user.is_manager() and not curr_user.is_cashier():
+
+        if not curr_user.is_admin() and not curr_user.is_manager():
             filt.append(('code', 'in', filt_in))
         sales_filter = BaseQuery.create_query_filter(SalesType, filters={'and': filt})
         stype = db.session.query(SalesType).filter(*sales_filter).all()
         stype_schema = SalesTypeSchema(many=True)
         result = stype_schema.dump(stype)
-        print(curr_user.username)
-        print(curr_user.is_ar_sales())
-        print(filt_in)
-        print(filt)
         return ResponseMessage(True, data=result).resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
@@ -400,7 +415,6 @@ def new_discount_type(curr_user):
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
-
 
 
 # Get All Discount Type

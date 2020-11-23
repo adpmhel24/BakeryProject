@@ -1,21 +1,24 @@
 from bakery_app import ma
-from .models import (WhseInv, InvTransaction, TransferRow,
-                     TransferHeader, ReceiveRow, ReceiveHeader, ItemRequest, ItemRequestRow)
-from bakery_app.items.md_schema import ItemsSchema
+from .models import (WhseInv, InvTransaction, TransferRow, TransferHeader,
+                     ReceiveRow, ReceiveHeader)
 
 
-class WhseInvSchema(ma.SQLAlchemySchema):
+class WhseInvSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = WhseInv
         ordered = True
+        include_fk = True
 
-    id = ma.auto_field()
-    item_code = ma.auto_field()
-    quantity = ma.auto_field()
-    warehouse = ma.auto_field()
-    created_by = ma.auto_field()
-    updated_by = ma.auto_field()
-    item = ma.Nested(ItemsSchema(only=("price", "uom")))
+    price = ma.Number()
+    uom = ma.String()
+
+    def dump(self, *args, **kwargs):
+        special = kwargs.pop('special', None)
+        _partial = super(WhseInvSchema, self).dump(*args, **kwargs)
+        if special is not None and all(f in _partial for f in special):
+            for field in special:
+                _partial['_{}'.format(field)] = _partial.pop(field)
+        return _partial
 
 
 class InvTransactionSchema(ma.SQLAlchemyAutoSchema):
@@ -54,21 +57,4 @@ class ReceiveHeaderSchema(ma.SQLAlchemyAutoSchema):
         include_fk = True
 
     recrow = ma.Nested(ReceiveRowSchema, many=True)
-
-
-class ItemRequestRowSchema(ma.SQLAlchemyAutoSchema):
-    class Meta:
-        model = ItemRequestRow
-        ordered = True
-        include_fk = True
-
-
-class ItemRequestSchema(ma.SQLAlchemyAutoSchema):
-    class Meta:
-        model = ItemRequest
-        ordered = True
-        include_fk = True
-
-    request_rows = ma.Nested(ItemRequestRowSchema, many=True)
-
 

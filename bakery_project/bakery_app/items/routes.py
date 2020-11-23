@@ -8,15 +8,17 @@ from sqlalchemy import exc, and_, or_
 
 from bakery_app import db, auth
 from bakery_app._utils import Check, ResponseMessage
+from bakery_app._helpers import BaseQuery
 from bakery_app.users.routes import token_required
 
-from .models import Items, ItemGroup, UnitOfMeasure
-from .md_schema import *
+from .models import Items, ItemGroup, UnitOfMeasure, PriceListHeader, PriceListRow
+from .md_schema import (ItemsSchema, ItemGroupSchema, UomSchema, 
+                        PriceListHeaderSchema, PriceListRowSchema)
 
 items = Blueprint('items', __name__)
 
 
-# Create New Item
+# Add New Item
 @items.route('/api/item/new', methods=['POST'])
 @token_required
 def create_item(curr_user):
@@ -201,7 +203,7 @@ def delete_item(curr_user, id):
         db.session.close()
 
 
-# Create Item Group
+# Add New Item Group
 @items.route('/api/item/item_grp/create', methods=['POST'])
 @token_required
 def create_itemgroup(curr_user):
@@ -347,7 +349,7 @@ def delete_itemgrp(curr_user, id):
         db.session.close()
 
 
-# Create UoM
+# Add New UoM
 @items.route('/api/item/uom/create', methods=['POST'])
 @token_required
 def create_uom(curr_user):
@@ -467,3 +469,123 @@ def delete_uom(curr_user, id):
         return ResponseMessage(False, message=err)
     finally:
         db.session.close()
+
+
+
+# Add New Pricelist
+@items.route('/api/item/pricelist/new', methods=['POST'])
+@token_required
+def add_new_price_list(curr_user):
+    if not curr_user.is_admin():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
+    data = request.get_json()
+    data['created_by'] = curr_user.id
+    data['updated_by'] = curr_user.id
+
+    if PriceListHeader.query.filter_by(code=data['code']).first():
+        return ResponseMessage(False, message="Already exists!").resp(), 500
+
+    try:
+        price_list = PriceListHeader(**data)
+        db.session.add(price_list)
+        db.session.commit()
+        price_schema = PriceListHeaderSchema()
+        result = price_schema.dump(price_list)
+        return ResponseMessage(True, message="Successfully added!", data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    finally:
+        db.session.close()
+
+
+
+# Get All Pricelist
+@items.route('/api/item/pricelist/get_all')
+@token_required
+def get_all_pricelist(curr_user):
+    if not curr_user.is_admin() and not curr_user.is_manager():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+    try:
+        filt = []
+        for k, v in request.args.to_dict().items():
+            filt.append((k, "like", f'%{v}%'))
+
+        list_filters = BaseQuery.create_query_filter(PriceListHeader, filters={"and": filt})     
+        price_list = PriceListHeader.query.filter(*list_filters).all()
+        price_schema = PriceListHeaderSchema(many=True, only=("id", "code", "description",))
+        result = price_schema.dump(price_list)
+        
+        return ResponseMessage(True, count=len(result), data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Get All Price List Rows
+@items.route('/api/item/price_list/row/get_all')
+@token_required
+def get_all_price_list_row(curr_user):
+    if not curr_user.is_admin() and not curr_user.is_manager():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
+    data = request.args.to_dict()
+    filt = []
+    for k, v in data.items():
+        filt.append((k, "==", v))
+
+    try:
+        row_filters = BaseQuery.create_query_filter(PriceListRow, filters={"and": filt})
+        price_row = PriceListRow.query.filter(*row_filters).all()
+        price_row_schema = PriceListRowSchema(many=True)
+        result = price_row_schema.dump(price_row)
+        return ResponseMessage(True, count=len(result), data=result).resp()
+    except (exc.IntegrityError, pyodbc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Get Price List Row Details
+@items.route('/api/item/price_list/row/details/<int:id>')
+@token_required
+def get_price_details(curr_user, id):
+    if not curr_user.is_admin() and not curr_user.is_manager():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
+    try:
+        price_row = PriceListRow.query.get(id)
+        price_row_schema = PriceListRowSchema()
+        result = price_row_schema.dump(price_row)
+        return ResponseMessage(True, count=len(result), data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+
+
+# Update Price List Row
+@items.route('/api/item/price_list/row/update/<int:id>', methods=['PUT'])
+@token_required
+def update_price_list_row(curr_user, id):
+    if not curr_user.is_admin():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
+    try:
+        data = request.get_json()
+        price_row = PriceListRow.query.get(id)
+        # update
+        price_row.price = data['price']
+        price_row.updated_by = curr_user.id
+        price_row.date_updated = datetime.now()
+        db.session.commit()
+        price_row_schema = PriceListRowSchema()
+        result = price_row_schema.dump(price_row)
+        return ResponseMessage(True, data=result).resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f"{err}").resp(), 500
