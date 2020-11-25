@@ -22,6 +22,7 @@ marshmallow-sqlalchemy==0.23.1
 pycodestyle==2.6.0
 pycparser==2.20
 pyodbc==4.0.30
+python-barcode==0.13.1
 python-dateutil==2.8.1
 python-dotenv==0.14.0
 python-editor==1.0.4
