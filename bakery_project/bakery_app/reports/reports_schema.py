@@ -13,6 +13,7 @@ class CashTransSchema(ma.Schema):
     used_dep = ma.Number()
     bank_dep = ma.Number()
     epay = ma.Number()
+    gcert = ma.Number()
 
 class SalesTransSchema(ma.Schema):
     class Meta:
@@ -44,3 +45,13 @@ class FinalInvCountSchema(ma.Schema):
     variance = ma.Number()
     price = ma.Number()
     total_amount = ma.Number()
+
+class PaymentMethodSchema(ma.Schema):
+    class Meta:
+        ordered = True
+
+    
+    transtype = ma.String()
+    cash_sales = ma.Number()
+    ar_sales = ma.Number()
+    agent_sales = ma.Number()

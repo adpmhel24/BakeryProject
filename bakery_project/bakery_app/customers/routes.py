@@ -4,7 +4,7 @@ from sqlalchemy import exc
 from flask import Blueprint, request, jsonify
 from bakery_app import db, auth
 from bakery_app._helpers import BaseQuery
-from bakery_app._utils import status_response, ResponseMessage
+from bakery_app._utils import ResponseMessage
 from bakery_app.users.routes import token_required
 
 from .models import Customer, CustomerType

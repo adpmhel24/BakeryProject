@@ -9,7 +9,7 @@ from sqlalchemy import exc
 from bakery_app import auth, db
 from bakery_app._helpers import BaseQuery
 from bakery_app.branches.models import Branch, Warehouses
-from bakery_app._utils import Check, status_response, ResponseMessage
+from bakery_app._utils import Check, ResponseMessage
 
 from .models import User, UserSchema
 

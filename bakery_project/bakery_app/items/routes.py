@@ -63,6 +63,7 @@ def create_item(curr_user):
                 continue
 
             item = Items(**row)
+            item.barcode = hash(row['item_code'])
             success.append(d)
             db.session.add(item)
             

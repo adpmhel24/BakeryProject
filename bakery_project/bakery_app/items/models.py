@@ -23,6 +23,7 @@ class Items(db.Model):
     updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
+    barcode = db.Column(db.Integer)
 
     def __repr__(self):
         return f"Items('{self.item_code}', '{self.item_name}"

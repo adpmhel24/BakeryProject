@@ -50,32 +50,6 @@ class Check():
         return False
 
 
-def status_response(status_code, item=None):
-    payload = {}
-    if status_code == 1:
-        payload['success'] = 'true'
-        payload['status'] = {}
-        payload['status']['code'] = status_code
-        if item:
-            payload['status']['message'] = f"{item}"
-        else:
-            payload['status']['message'] = 'Added successfully!'
-    elif status_code in [2, 3, 4]:
-        payload['status'] = {}
-        payload['success'] = 'false'
-        payload['status']['code'] = status_code
-        if item and status_code == 2:
-            payload['status']['message'] = f"Invalid '{item}'/not exist!"
-        elif item and status_code == 3:
-            payload['status']['message'] = f"Invalid '{item}'/Already exist!"
-        elif item and status_code == 4:
-            payload['status']['message'] = f"{item}"
-        else:
-            payload['status']['message'] = f"Unknown Error"
-    response = jsonify(payload)
-    return response
-
-
 class ResponseMessage:
     """First argument is success = True or False"""
 

@@ -38,6 +38,7 @@ class User(db.Model, UserMixin):
     isARSales = db.Column(db.Boolean, default=False)
     isCashSales = db.Column(db.Boolean, default=False)
     isAgentSales = db.Column(db.Boolean, default=False)
+    isAccounting = db.Column(db.Boolean, default=False)
     isActive = db.Column(db.Boolean, default=True)
 
     def hash_password(self, password):
@@ -98,6 +99,9 @@ class User(db.Model, UserMixin):
 
     def is_allow_pullout(self):
         return self.isAllowPullOut
+
+    def is_accounting(self):
+        return self.isAccounting
 
     def is_active(self):
         return self.isActive

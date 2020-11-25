@@ -10,7 +10,7 @@ from bakery_app._helpers import BaseQuery
 from bakery_app.customers.models import Customer
 from bakery_app.inventory.models import WhseInv
 from bakery_app.branches.models import Series, ObjectType, Warehouses
-from bakery_app.users.routes import token_required
+from bakery_app.users.routes import token_required, User
 from bakery_app._utils import Check, ResponseMessage
 
 from .models import (SalesHeader, SalesRow, SalesType, DiscountType)
@@ -144,27 +144,57 @@ def new_sales(curr_user):
 @sales.route('/api/sales/get_all')
 @token_required
 def get_all_sales(curr_user):
-    q = request.args.get('transnum')
     try:
-        obj = ObjectType.query.filter_by(code='SLES').first()
-        # get series of the user
-        series = Series.query.filter_by(whsecode=curr_user.whse, objtype=obj.objtype).first()
-        if not series:
-            return ResponseMessage(False, message="No series found!").resp(), 401
-        if q:
-            sales = db.session.query(SalesHeader). \
-                filter(and_(SalesHeader.seriescode == series.code,
-                            SalesRow.whsecode == curr_user.whse,
-                            SalesHeader.void == False,
-                            SalesHeader.transnumber == q)).all()
+        data = request.args.to_dict()
+        transdate = ''
+        header_filt = []
+        row_filt = []
+        user_filt = []
+
+        for k, v in data.items():
+            if k == 'transdate' and v:
+                transdate = v
+            elif k == 'sap_number':
+                if not v:
+                    header_filt.append((k, "==", None))
+                if v:
+                    header_filt.append((k, "!=", None))
+            elif k == 'whsecode' and v:
+                row_filt.append((k, "==", v))
+            elif k == 'branch':
+                user_filt.append((k, "==", v))
+            else:
+                if v:
+                    header_filt.append((k, "==", v))
+
+        header_filter = BaseQuery.create_query_filter(SalesHeader, filters={"and": header_filt})
+        row_filter = BaseQuery.create_query_filter(SalesRow, filters={"and": row_filt})
+        user_filter = BaseQuery.create_query_filter(User, filters={"and": user_filt})
+
+        if transdate:
+            query = db.session.query(SalesHeader). \
+                select_from(SalesHeader). \
+                    join(SalesRow, SalesRow.sales_id == SalesHeader.id). \
+                    outerjoin(User, User.id == SalesHeader.created_by). \
+                    filter(and_(
+                        cast(SalesHeader.transdate, DATE) == transdate,
+                        *header_filter,
+                        *row_filter,
+                        *user_filter
+                    ))
         else:
-            sales = db.session.query(SalesHeader). \
-                filter(and_(SalesHeader.seriescode == series.code,
-                            SalesRow.whsecode == curr_user.whse,
-                            SalesHeader.void == False)).all()
-        sales_schema = SalesHeaderSchema(many=True, exclude=(
-            "date_created", "date_updated", "created_by", "updated_by", "salesrow"))
-        result = sales_schema.dump(sales)
+            query = db.session.query(SalesHeader). \
+                select_from(SalesHeader). \
+                    join(SalesRow, SalesRow.sales_id == SalesHeader.id). \
+                    outerjoin(User, User.id == SalesHeader.created_by). \
+                    filter(and_(
+                        *header_filter,
+                        *row_filter,
+                        *user_filter
+                    ))
+            
+        sales_schema = SalesHeaderSchema(many=True, exclude=("date_created", "date_updated", "created_by", "updated_by", "salesrow"))
+        result = sales_schema.dump(query)
         return ResponseMessage(True, count=len(result), data=result).resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500

@@ -1,8 +1,8 @@
 from datetime import datetime
 
 import pyodbc
-from flask import Blueprint, request
-from sqlalchemy import exc, and_, func, DATE
+from flask import Blueprint, request, json
+from sqlalchemy import exc, and_, func, DATE, cast
 from bakery_app import db
 from bakery_app._utils import ResponseMessage
 from bakery_app.users.routes import token_required
@@ -11,6 +11,7 @@ from bakery_app.sales.models import SalesHeader, SalesRow
 from bakery_app._helpers import BaseQuery
 from bakery_app.sales.sales_schema import SalesHeaderSchema, SalesRowSchema
 from bakery_app.branches.models import Warehouses
+from bakery_app.users.models import User
 from bakery_app.payment.models import PayTransHeader, Deposit, PayTransRow
 from bakery_app.payment.payment_schema import PaymentHeaderSchema, PaymentRowSchema
 
@@ -119,8 +120,8 @@ def update_sales_sap_num(curr_user):
 #         return ResponseMessage(False, message=f'{err}').resp(), 500
 
 
-# Get Payments for SAP number
-@sap_num.route('/api/payment/for_sap/get_all')
+# Get and Update Payments for SAP IP number
+@sap_num.route('/api/sap_num/payment/update', methods=['PUT', 'GET'])
 @token_required
 def get_payment_for_sap(curr_user):
     if not curr_user.is_can_add_sap() and not curr_user.is_manager() and not curr_user.is_admin():
@@ -128,12 +129,86 @@ def get_payment_for_sap(curr_user):
 
     try:
         data = request.args.to_dict()
-        filts = []
+        transdate = ''
+        sales_filts = []
+        payment_filts = []
+        payment_row_filts = [("sap_number", "==", None)]
+        user_filts = []
+        for k, v in data.items():
+            if 'sales_type' == k and v:
+                sales_filts.append(('transtype', "==", v))
+            elif 'payment_type' == k and v:
+                payment_row_filts.append((k, "==", v))
+            elif 'transdate' == k and v:
+                transdate = v
+            elif 'branch' == k and v:
+                user_filts.append((k, "==", v))
+            elif 'whse' == k and v:
+                user_filts.append((k, "==", v))
+            elif 'ids' == k and v:
+                payment_row_filts.append(('id', 'in', json.loads(request.args.get('ids'))))
 
-
+        sales_filter = BaseQuery.create_query_filter(SalesHeader, filters={"and": sales_filts})
+        payment_filter = BaseQuery.create_query_filter(PayTransHeader, filters={"and": payment_filts})
+        user_filter = BaseQuery.create_query_filter(User, filters={"and": user_filts})
+        payment_row_filter = BaseQuery.create_query_filter(PayTransRow, filters={"and": payment_row_filts})
+        
+        
+        if transdate:
+            query = db.session.query(PayTransRow).select_from(PayTransRow). \
+                join(PayTransHeader, PayTransHeader.id == PayTransRow.payment_id). \
+                join(SalesHeader, SalesHeader.id == PayTransHeader.base_id). \
+                outerjoin(User, User.id == SalesHeader.created_by). \
+                filter(and_(
+                    cast(PayTransHeader.transdate, DATE) == transdate,
+                    *sales_filter,
+                    *payment_filter,
+                    *user_filter,
+                    *payment_row_filter
+                ))
+        else:
+            query = db.session.query(PayTransRow).select_from(PayTransRow). \
+                join(PayTransHeader, PayTransHeader.id == PayTransRow.payment_id). \
+                join(SalesHeader, SalesHeader.id == PayTransHeader.base_id). \
+                outerjoin(User, User.id == SalesHeader.created_by). \
+                filter(and_(
+                    *sales_filter,
+                    *payment_filter,
+                    *user_filter,
+                    *payment_row_filter,
+                ))
+    
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         return ResponseMessage(False, message=f'{err}').resp(), 500
     except Exception as err:
         return ResponseMessage(False, message=f'{err}').resp(), 500
 
+    if request.method == 'GET':
+        try:
+            row_schema = PaymentRowSchema(many=True)
+            result = row_schema.dump(query)
+            return ResponseMessage(True, count=len(result), data=result).resp()
 
+            
+        except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+            return ResponseMessage(False, message=f'{err}').resp(), 500
+        except Exception as err:
+            return ResponseMessage(False, message=f'{err}').resp(), 500
+        finally:
+            db.session.close()
+
+    elif request.method == 'PUT':
+        
+        try:
+            data = request.get_json()
+            for row in query:
+                row.sap_number = data['sap_number']
+                row.updated_by = curr_user.id
+            db.session.commit()
+            return ResponseMessage(True, message="Successfully updated!").resp()
+        except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+            return ResponseMessage(False, message=f'{err}').resp(), 500
+        except Exception as err:
+            return ResponseMessage(False, message=f'{err}').resp(), 500
+        finally:
+            db.session.close()

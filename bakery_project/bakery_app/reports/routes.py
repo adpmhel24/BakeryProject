@@ -6,7 +6,7 @@ from bakery_app import db
 from bakery_app._helpers import BaseQuery
 from bakery_app._utils import ResponseMessage
 from bakery_app.users.routes import token_required
-from bakery_app.payment.models import PayTransHeader, CashTransaction, Deposit
+from bakery_app.payment.models import PayTransHeader, CashTransaction, Deposit, PaymentType
 from bakery_app.sales.models import SalesHeader, SalesRow
 from bakery_app.sales.sales_schema import SalesHeaderSchema, SalesRowSchema
 from bakery_app.pullout.models import PullOutHeader
@@ -17,7 +17,7 @@ from bakery_app.branches.models import Warehouses
 from bakery_app.items.models import PriceListRow
 from bakery_app.users.models import User
 
-from .reports_schema import CashTransSchema, SalesTransSchema, FinalInvCountSchema
+from .reports_schema import CashTransSchema, SalesTransSchema, FinalInvCountSchema, PaymentMethodSchema
 
 reports = Blueprint('reports', __name__)
 
@@ -284,20 +284,27 @@ def final_report(curr_user):
             if k == 'transdate':
                 if v:
                     transdate = v
-            # elif k == 'whsecode':
-            #     if not curr_user.is_admin():
-            #         sales_filt.append(('whsecode', "==", curr_user.whse))
-            #     else:
-            #         sales_filt.append(('whsecode', "==", v))
+            elif k == 'whsecode':
+                if not curr_user.is_admin():
+                    sales_filt.append(('whsecode', "==", curr_user.whse))
+                else:
+                    sales_filt.append(('whsecode', "==", v))
             else:
                 if v:
                     sales_filt.append((k, "==", v))
 
+        # check first there's a order need to confirm
+        pending_order = SalesHeader.query.filter(and_(cast(SalesHeader.transdate, DATE) == transdate,
+                                                        SalesHeader.confirm == False,
+                                                        SalesHeader.docstatus != 'N')).first()
+        if pending_order:
+            raise Exception(f"Confirm first the transaction {pending_order.reference}")
+
         user_filters = BaseQuery.create_query_filter(User, filters={'and': user_filt})
         sales_filters = BaseQuery.create_query_filter(SalesHeader, filters={'and': sales_filt})
-
+        
+        
         # Payment Cases
-
         cash_trans = CashTransaction
         pay_trans = PayTransHeader
         sales_trans = SalesHeader
@@ -313,6 +320,7 @@ def final_report(curr_user):
         used_dep_case = case([(cash_trans.transtype == 'FDEPS', cash_trans.amount)])
         bank_dep_case = case([(cash_trans.transtype == 'BDEP', cash_trans.amount)])
         epay_case = case([(cash_trans.transtype == 'EPAY', cash_trans.amount)])
+        gcert_case = case([(cash_trans.transtype == 'GCRT', cash_trans.amount)])
 
         cash_header = db.session.query(
                 func.sum(cash_on_hand_case).label('total_cash_on_hand'),
@@ -322,7 +330,8 @@ def final_report(curr_user):
                 func.sum(deposit_case).label('deposit'),
                 func.sum(used_dep_case).label('used_dep'),
                 func.sum(bank_dep_case).label('bank_dep'),
-                func.sum(epay_case).label('epay')). \
+                func.sum(epay_case).label('epay'),
+                func.sum(gcert_case).label('gcert')). \
             select_from(cash_trans). \
             join(User, cash_trans.created_by == User.id). \
             outerjoin(pay_trans, pay_trans.id == cash_trans.trans_id). \
@@ -393,8 +402,27 @@ def final_report(curr_user):
             outerjoin(PriceListRow, and_(PriceListRow.pricelist_id == Warehouses.pricelist,
                                         PriceListRow.item_code == fc_row.item_code)). \
             filter(cast(fc_header.transdate, DATE) == transdate)
-            
+        
 
+        # Payment Method Summary
+        cash_case = case([(sales_trans.transtype == 'CASH', cash_trans.amount)])
+        ar_case = case([(sales_trans.transtype == 'AR Sales', cash_trans.amount)])
+        agent_case = case([(sales_trans.transtype == 'Agent AR Sales', cash_trans.amount)])
+        pay_method_query = db.session.query(
+                PaymentType.description.label('transtype'),
+                func.sum(func.isnull(cash_case, 0)).label('cash_sales'),
+                func.sum(func.isnull(ar_case, 0)).label('ar_sales'),
+                func.sum(func.isnull(agent_case, 0)).label('agent_sales')
+                ). \
+            select_from(cash_trans). \
+            join(User, cash_trans.created_by == User.id). \
+            outerjoin(pay_trans, pay_trans.id == cash_trans.trans_id). \
+            outerjoin(sales_trans, pay_trans.base_id == sales_trans.id).\
+            outerjoin(PaymentType, cash_trans.transtype == PaymentType.code). \
+            filter(and_(cast(cash_trans.transdate, DATE) == transdate,
+                        *user_filters
+                        )).\
+            group_by(PaymentType.description)
 
         
 
@@ -450,9 +478,12 @@ def final_report(curr_user):
         sales_result = sales_schema.dump(sales_header)
         final_inv_schema = FinalInvCountSchema(many=True)
         final_inv_result = final_inv_schema.dump(final_count_query)
+        pay_method_schema = PaymentMethodSchema(many=True)
+        pay_method_result = pay_method_schema.dump(pay_method_query)
         return ResponseMessage(True, data={'cash': cash_result, 
                                         'sales': sales_result, 
-                                        'final_inv': final_inv_result
+                                        'final_inv': final_inv_result,
+                                        'payment_method': pay_method_result
                                         }).resp()
         
 

@@ -441,6 +441,7 @@ def create_receive(curr_user):
         db.session.rollback()
         return ResponseMessage(False, message=f"{err}").resp(), 500
     finally:
+        db.session.rollback()
         db.session.close()
 
 
