@@ -342,17 +342,17 @@ def final_report(curr_user):
 
 
         # Sales Type Cash Case
-        gross_cash_case = case([(SalesHeader.transtype == 'CASH', SalesHeader.doctotal)])
+        gross_cash_case = case([(SalesHeader.transtype == 'CASH', SalesHeader.gross)])
         disc_cash_case = case([(SalesHeader.transtype == 'CASH', SalesHeader.disc_amount)])
         net_cash_case = case([(SalesHeader.transtype == 'CASH', SalesHeader.doctotal)])
 
         # Sales Type AR Sales Case
-        gross_ar_case = case([(SalesHeader.transtype == 'AR Sales', SalesHeader.doctotal)])
+        gross_ar_case = case([(SalesHeader.transtype == 'AR Sales', SalesHeader.gross)])
         disc_ar_case = case([(SalesHeader.transtype == 'AR Sales', SalesHeader.disc_amount)])
         net_ar_case = case([(SalesHeader.transtype == 'AR Sales', SalesHeader.doctotal)])
 
         # Sales Type Agent AR Sales Case
-        gross_ar_agent_case = case([(SalesHeader.transtype == 'Agent AR Sales', SalesHeader.doctotal)])
+        gross_ar_agent_case = case([(SalesHeader.transtype == 'Agent AR Sales', SalesHeader.gross)])
         disc_ar_agent_case = case([(SalesHeader.transtype == 'Agent AR Sales', SalesHeader.disc_amount)])
         net_ar_agent_case = case([(SalesHeader.transtype == 'Agent AR Sales', SalesHeader.doctotal)])
 

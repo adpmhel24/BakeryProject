@@ -38,6 +38,7 @@ def create_po_req(curr_user):
     if request.method == 'GET':
         try:
             if not curr_user.is_manager():
+                whse_inv_case = case([(WhseInv.quantity != 0, 1)], else_=0)
                 whse_inv = db.session.query(WhseInv.item_code,
                                             WhseInv.item_code,
                                             WhseInv.quantity,
@@ -45,7 +46,7 @@ def create_po_req(curr_user):
                                             ).filter(WhseInv.warehouse == curr_user.whse
                                                      ).outerjoin(
                     Items, Items.item_code == WhseInv.item_code
-                ).order_by(WhseInv.quantity.desc(), WhseInv.item_code
+                ).order_by(whse_inv_case.desc(), WhseInv.item_code
                            ).all()
                 whseinv_schema = WhseInvSchema(many=True)
                 result = whseinv_schema.dump(whse_inv)

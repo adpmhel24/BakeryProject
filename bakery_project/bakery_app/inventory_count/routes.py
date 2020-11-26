@@ -191,8 +191,15 @@ def inv_count_confirm(curr_user):
         SET @date = '{}' 
         SET @whse = '{}'
 
-        SELECT* FROM( SELECT x.item_code, x.quantity , x.ending_sales_count, 
-        x.ending_auditor_count, x.ending_manager_count, CASE WHEN x.ending_manager_count IS NOT NULL THEN 
+        SELECT* 
+        y.item_code, y.quantity, 
+        y.ending_sales_count, y.ending_auditor_count, y.ending_manager_count, y.ending_final_count,
+        y.po_sales_count, y.po_auditor_count, y.po_manager_count, y.po_final_count,
+        CASE WHEN y.variance != 0 THEN y.variance * -1 ELSE 0 END variance,
+        y.sales_user, y.auditor_user, y.manager_user, y.uom
+        FROM( SELECT x.item_code, x.quantity , x.ending_sales_count, 
+        x.ending_auditor_count, x.ending_manager_count, 
+        CASE WHEN x.ending_manager_count IS NOT NULL THEN 
         x.ending_manager_count WHEN x.ending_manager_count IS NULL AND x.ending_auditor_count IS NOT NULL THEN 
         x.ending_auditor_count ELSE x.ending_sales_count END AS [ending_final_count] 
                     
@@ -341,12 +348,12 @@ def inv_count_confirm(curr_user):
                 item_bal = WhseInv.query.filter_by(item_code=item.item_code, warehouse=curr_user.whse).first()
                 # if the variance is negative which is the system inv is less than the actual
                 # then for adjustment in
-                if item.variance < 0:
+                if item.variance > 0:
                     # append to for adjustment in if variance is positive
                     for_adjustment_in.append(item)
                 # if the variance is positive which is the system is greater than actual
                 # then for charge
-                elif item.variance > 0:
+                elif item.variance < 0:
                     for_charge.append(item)
                 # append to for po
                 if item.po_final_count:
@@ -422,7 +429,7 @@ def inv_count_confirm(curr_user):
                     adj_row.adjustin_id = adj_in.id
                     adj_row.objtype = adj_in.objtype
                     adj_row.item_code = row.item_code
-                    adj_row.quantity = (row.variance * -1)
+                    adj_row.quantity = row.variance
                     adj_row.uom = row.uom
                     adj_row.whsecode = curr_user.whse
                     adj_row.created_by = adj_in.created_by
@@ -480,7 +487,7 @@ def inv_count_confirm(curr_user):
                     sales_row = SalesRow()
                     sales_row.sales_id = sales.id
                     sales_row.item_code = row.item_code
-                    sales_row.quantity = row.variance
+                    sales_row.quantity = row.variance * -1
                     # get the price
                     pricelist = db.session.query(PriceListRow
                                                  ).join(PriceListHeader
@@ -583,3 +590,4 @@ def inv_count_confirm(curr_user):
             return ResponseMessage(False, message=f"{err}").resp(), 500
         finally:
             db.session.close()
+
