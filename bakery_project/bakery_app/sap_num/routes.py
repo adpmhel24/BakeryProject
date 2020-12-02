@@ -14,6 +14,9 @@ from bakery_app.branches.models import Warehouses
 from bakery_app.users.models import User
 from bakery_app.payment.models import PayTransHeader, Deposit, PayTransRow
 from bakery_app.payment.payment_schema import PaymentHeaderSchema, PaymentRowSchema
+from bakery_app.pullout.models import PullOutHeader
+
+from .sap_num_schema import ForSAPIPSchema
 
 
 sap_num = Blueprint('sap_num', __name__)
@@ -96,34 +99,10 @@ def update_sales_sap_num(curr_user):
         return ResponseMessage(False, message=f'{err}').resp(), 500
 
 
-# Get The total quantity for SAP Number
-# @sap_num.route('/api/sales/for_sap/get_total')
-# @token_required
-# def get_sales_total_for_sap(curr_user):
-#     try:
-#         ids = request.args.get('ids').rstrip(']').lstrip('[')
-#         ids = list(ids.split(','))
-#         filt_sales_h = [('sales_id', 'in', ids)]
-#         sales_filt = BaseQuery.create_query_filter(SalesRow, filters={'and': filt_sales_h})
-#         sales_row = db.session.query(
-#                 SalesRow.item_code, 
-#                 func.sum(SalesRow.quantity).label('quantity')
-#             ).filter(*sales_filt
-#             ).group_by(SalesRow.item_code
-#             ).all()
-#         row_schema = SalesRowSchema(many=True)
-#         result = row_schema.dump(sales_row)
-#         return ResponseMessage(True, count=len(result), data=result).resp()
-#     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
-#             return ResponseMessage(False, message=f'{err}').resp(), 500
-#     except Exception as err:
-#         return ResponseMessage(False, message=f'{err}').resp(), 500
-
-
 # Get and Update Payments for SAP IP number
 @sap_num.route('/api/sap_num/payment/update', methods=['PUT', 'GET'])
 @token_required
-def get_payment_for_sap(curr_user):
+def update_payment_sap_num(curr_user):
     if not curr_user.is_can_add_sap() and not curr_user.is_manager() and not curr_user.is_admin():
         return ResponseMessage(False, message="Unauthorized user!").resp(), 401
 
@@ -147,6 +126,8 @@ def get_payment_for_sap(curr_user):
                 user_filts.append((k, "==", v))
             elif 'ids' == k and v:
                 payment_row_filts.append(('id', 'in', json.loads(request.args.get('ids'))))
+            elif 'search' == k and v:
+                payment_filts.append(('cust_code', 'like', f'%{v}%'))
 
         sales_filter = BaseQuery.create_query_filter(SalesHeader, filters={"and": sales_filts})
         payment_filter = BaseQuery.create_query_filter(PayTransHeader, filters={"and": payment_filts})
@@ -155,7 +136,13 @@ def get_payment_for_sap(curr_user):
         
         
         if transdate:
-            query = db.session.query(PayTransRow).select_from(PayTransRow). \
+            query = db.session.query(
+                PayTransHeader.reference,
+                PayTransHeader.cust_code,
+                PayTransRow.payment_type,
+                PayTransRow.amount,
+                PayTransRow.reference2
+                ).select_from(PayTransRow). \
                 join(PayTransHeader, PayTransHeader.id == PayTransRow.payment_id). \
                 join(SalesHeader, SalesHeader.id == PayTransHeader.base_id). \
                 outerjoin(User, User.id == SalesHeader.created_by). \
@@ -167,7 +154,12 @@ def get_payment_for_sap(curr_user):
                     *payment_row_filter
                 ))
         else:
-            query = db.session.query(PayTransRow).select_from(PayTransRow). \
+            query = db.session.query(
+                PayTransHeader.reference,
+                PayTransHeader.cust_code,
+                PayTransRow.payment_type,
+                PayTransRow.amount,
+                PayTransRow.reference2).select_from(PayTransRow). \
                 join(PayTransHeader, PayTransHeader.id == PayTransRow.payment_id). \
                 join(SalesHeader, SalesHeader.id == PayTransHeader.base_id). \
                 outerjoin(User, User.id == SalesHeader.created_by). \
@@ -185,7 +177,7 @@ def get_payment_for_sap(curr_user):
 
     if request.method == 'GET':
         try:
-            row_schema = PaymentRowSchema(many=True)
+            row_schema = ForSAPIPSchema(many=True)
             result = row_schema.dump(query)
             return ResponseMessage(True, count=len(result), data=result).resp()
 
@@ -212,3 +204,35 @@ def get_payment_for_sap(curr_user):
             return ResponseMessage(False, message=f'{err}').resp(), 500
         finally:
             db.session.close()
+
+
+# Pull Out For SAP Number
+@sap_num.route('/api/sap_num/pullout/update', methods=['PUT'])
+@token_required
+def update_pullout_sap_num(curr_user):
+    if not curr_user.is_can_add_sap() and not curr_user.is_manager() and not curr_user.is_admin():
+        return ResponseMessage(False, message="Unauthorized user!").resp(), 401
+
+    try:
+        sap_num = request.json['sap_number']
+        ids = json.loads(request.args.get('ids'))
+        pullout = PullOutHeader.query.filter(PullOutHeader.id.in_(ids)).all()
+        print(pullout)
+
+        for i in pullout:
+            if i.sap_number:
+                raise Exception(f'{i.reference} already have sap number!')
+            i.sap_number = sap_num
+            i.docstatus = 'C'
+            i.remarks = request.json['remarks'] if request.json['remarks'] else None
+            i.updated_by = curr_user.id
+            i.date_updated = datetime.now()
+
+        db.session.commit()
+        return ResponseMessage(True, message="Successfully updated!").resp()
+    except (pyodbc.IntegrityError, exc.IntegrityError) as err:
+        return ResponseMessage(False, message=f'{err}').resp(), 500
+    except Exception as err:
+        return ResponseMessage(False, message=f'{err}').resp(), 500
+    finally:
+        db.session.close()

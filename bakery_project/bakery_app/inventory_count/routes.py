@@ -191,7 +191,7 @@ def inv_count_confirm(curr_user):
         SET @date = '{}' 
         SET @whse = '{}'
 
-        SELECT* 
+        SELECT
         y.item_code, y.quantity, 
         y.ending_sales_count, y.ending_auditor_count, y.ending_manager_count, y.ending_final_count,
         y.po_sales_count, y.po_auditor_count, y.po_manager_count, y.po_final_count,
@@ -544,7 +544,7 @@ def inv_count_confirm(curr_user):
                 header = {'series': series.id, 'objtype': obj.objtype, 'seriescode': series.code,
                         'transnumber': series.next_num, 'reference': reference, 'created_by': curr_user.id,
                         'updated_by': curr_user.id, 'transdate': transdate,
-                        'sap_number': sap_number if sap_number else None}
+                        'sap_number': sap_number if sap_number else None, 'confirm': True}
 
                 po_header = PullOutHeader(**header)
 

@@ -11,8 +11,8 @@ from bakery_app._utils import Check, ResponseMessage
 from bakery_app._helpers import BaseQuery
 from bakery_app.users.routes import token_required
 
-from .models import Items, ItemGroup, UnitOfMeasure, PriceListHeader, PriceListRow
-from .md_schema import (ItemsSchema, ItemGroupSchema, UomSchema, 
+from .models import Items, ItemGroup, UnitOfMeasure, PriceListHeader, PriceListRow, branch
+from .md_schema import (ItemsSchema, ItemGroupSchema, UomSchema,
                         PriceListHeaderSchema, PriceListRowSchema)
 
 items = Blueprint('items', __name__)
@@ -66,7 +66,7 @@ def create_item(curr_user):
             item.barcode = hash(row['item_code'])
             success.append(d)
             db.session.add(item)
-            
+
         db.session.commit()
         return ResponseMessage(True, data={"Successfully": success, "Unsuccessful ": unsuccess}).resp()
     except Exception as err:
@@ -85,15 +85,32 @@ def create_item(curr_user):
 def get_all_items(curr_user):
 
     q = request.args.get('q')
-
+    whse = branch.Warehouses.query.filter_by(whsecode=curr_user.whse).first()
     if q:
-        items = Items.query.filter(Items.item_code.contains(
-            q.upper()) | Items.item_name.contains(q.upper())).all()
+        items = db.session.query(
+            Items.id,
+            Items.item_code,
+            Items.item_name,
+            Items.item_group,
+            Items.uom,
+            PriceListRow.price).\
+            outerjoin(PriceListRow, PriceListRow.item_code == Items.item_code). \
+            filter(and_(or_(Items.item_code. ontains(q.upper()),
+                            Items.item_name.contains(q.upper())),
+                        PriceListRow.pricelist_id == whse.pricelist)).all()
     else:
-        items = Items.query.all()
+        items = db.session.query(
+            Items.id,
+            Items.item_code,
+            Items.item_name,
+            Items.item_group,
+            Items.uom,
+            PriceListRow.price). \
+            outerjoin(PriceListRow, PriceListRow.item_code == Items.item_code).\
+            filter(and_(PriceListRow.pricelist_id == whse.pricelist)).all()
 
     item_schema = ItemsSchema(many=True, only=("id", "item_code", "item_name", "min_stock",
-                                               "max_stock", "uom", "item_group",))
+                                               "max_stock", "uom", "item_group", "price",))
     result = item_schema.dump(items)
     return ResponseMessage(True, data=result).resp()
 
@@ -472,7 +489,6 @@ def delete_uom(curr_user, id):
         db.session.close()
 
 
-
 # Add New Pricelist
 @items.route('/api/item/pricelist/new', methods=['POST'])
 @token_required
@@ -502,7 +518,6 @@ def add_new_price_list(curr_user):
         db.session.close()
 
 
-
 # Get All Pricelist
 @items.route('/api/item/pricelist/get_all')
 @token_required
@@ -514,11 +529,13 @@ def get_all_pricelist(curr_user):
         for k, v in request.args.to_dict().items():
             filt.append((k, "like", f'%{v}%'))
 
-        list_filters = BaseQuery.create_query_filter(PriceListHeader, filters={"and": filt})     
+        list_filters = BaseQuery.create_query_filter(
+            PriceListHeader, filters={"and": filt})
         price_list = PriceListHeader.query.filter(*list_filters).all()
-        price_schema = PriceListHeaderSchema(many=True, only=("id", "code", "description",))
+        price_schema = PriceListHeaderSchema(
+            many=True, only=("id", "code", "description",))
         result = price_schema.dump(price_list)
-        
+
         return ResponseMessage(True, count=len(result), data=result).resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
@@ -539,7 +556,8 @@ def get_all_price_list_row(curr_user):
         filt.append((k, "==", v))
 
     try:
-        row_filters = BaseQuery.create_query_filter(PriceListRow, filters={"and": filt})
+        row_filters = BaseQuery.create_query_filter(
+            PriceListRow, filters={"and": filt})
         price_row = PriceListRow.query.filter(*row_filters).all()
         price_row_schema = PriceListRowSchema(many=True)
         result = price_row_schema.dump(price_row)

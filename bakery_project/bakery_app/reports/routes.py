@@ -482,8 +482,8 @@ def final_report(curr_user):
         pay_method_result = pay_method_schema.dump(pay_method_query)
         return ResponseMessage(True, data={'cash': cash_result, 
                                         'sales': sales_result, 
-                                        'final_inv': final_inv_result,
-                                        'payment_method': pay_method_result
+                                        'payment_method': pay_method_result,
+                                        'final_inv': final_inv_result
                                         }).resp()
         
 

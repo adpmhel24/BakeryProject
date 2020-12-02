@@ -2,7 +2,7 @@ from datetime import datetime
 from bakery_app import db
 from sqlalchemy import event
 from bakery_app.inventory.models import WhseInv
-import bakery_app.branches as branch
+import bakery_app.branches.models as branch
 
 
 class Items(db.Model):
@@ -81,8 +81,10 @@ class PriceListRow(db.Model):
     __tablename__ = "tblpricelistrow"
 
     id = db.Column(db.Integer, primary_key=True)
-    pricelist_id = db.Column(db.Integer, db.ForeignKey('tblpricelist.id', ondelete='CASCADE'), nullable=False)
-    item_code = db.Column(db.String(100), db.ForeignKey('tblitems.item_code', ondelete='NO ACTION'), nullable=False)
+    pricelist_id = db.Column(db.Integer, db.ForeignKey(
+        'tblpricelist.id', ondelete='CASCADE'), nullable=False)
+    item_code = db.Column(db.String(100), db.ForeignKey(
+        'tblitems.item_code', ondelete='NO ACTION'), nullable=False)
     price = db.Column(db.Float, nullable=False, default=0.00)
     date_created = db.Column(db.DateTime, nullable=False, default=datetime.now)
     date_updated = db.Column(db.DateTime, nullable=False, default=datetime.now)
@@ -99,17 +101,17 @@ def create_price_list(*args):
             items = Items.query.all()
             for item in items:
                 price_list_row = PriceListRow(pricelist_id=obj.id, item_code=item.item_code,
-                                        created_by=obj.created_by, updated_by=obj.updated_by)
+                                              created_by=obj.created_by, updated_by=obj.updated_by)
                 db.session.add(price_list_row)
 
         elif isinstance(obj, Items):
             price_lists = PriceListHeader.query.all()
             for price_list in price_lists:
                 price_list_row = PriceListRow(pricelist_id=price_list.id, item_code=obj.item_code,
-                                        created_by=obj.created_by, updated_by=obj.updated_by)
+                                              created_by=obj.created_by, updated_by=obj.updated_by)
                 db.session.add(price_list_row)
 
-        else: 
+        else:
             continue
 
 

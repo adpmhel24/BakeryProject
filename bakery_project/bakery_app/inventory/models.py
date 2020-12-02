@@ -1,7 +1,8 @@
 from datetime import datetime
-from sqlalchemy import event
+from sqlalchemy import event, and_
 from bakery_app import db
 from bakery_app._helpers import get_model_changes
+from bakery_app.sapb1.models import ITRow, ITHeader, PORow, POHeader
 
 
 class WhseInv(db.Model):
@@ -123,6 +124,7 @@ class ReceiveHeader(db.Model):
     reference2 = db.Column(db.String(100))
     remarks = db.Column(db.String(250), nullable=True)
     supplier = db.Column(db.String(150))
+    type2 = db.Column(db.String(100))
     created_by = db.Column(db.Integer, db.ForeignKey('tbluser.id', ondelete='NO ACTION'),
                            nullable=False)
     updated_by = db.Column(db.Integer, db.ForeignKey('tbluser.id'))
@@ -165,6 +167,7 @@ def insert_update(*args):
     sess = args[0]
     for obj in sess.new:
 
+        # Transfer Transaction 
         # Insert to InvTransaction and Update Whse Inv
         if isinstance(obj, TransferRow):
 
@@ -179,7 +182,7 @@ def insert_update(*args):
                                       transdate=t_h.transdate, created_by=t_h.created_by, updated_by=t_h.updated_by,
                                       reference=t_h.reference, sap_number=obj.sap_number)
 
-            db.session.add_all([whseinv, invtrans])
+            db.session.add_all([invtrans])
 
         # Receive Transaction
         # Insert to InvTransaction
@@ -201,21 +204,35 @@ def insert_update(*args):
                                       warehouse=obj.to_whse, warehouse2=obj.from_whse, transdate=r_h.transdate,
                                       created_by=r_h.created_by, updated_by=r_h.updated_by, reference=r_h.reference,
                                       sap_number=obj.sap_number, reference2=r_h.reference2)
+            
+            # Check if the transtype is SAPIT then update the table of SAPIT
+            if r_h.transtype == 'SAPIT':
+                it_row = ITRow.query.filter(and_(ITRow.itemcode == obj.item_code, ITRow.docnum == obj.sap_number)).first()
+                if it_row.actual_rec:
+                    continue
+                it_row.actual_rec = obj.actualrec
 
-            db.session.add_all([whseinv, invtrans])
+            # Check if the transtype is SAPO then update the table of SAPPO
+            if r_h.transtype == 'SAPPO':
+                po_row = PORow.query.filter(and_(PORow.itemcode == obj.item_code, PORow.docnum == obj.sap_number)).first()
+                if po_row.actual_rec:
+                    continue
+                po_row.actual_rec = obj.actualrec
+                
+            db.session.add_all([invtrans])
         else:
             continue
 
-    # Update When Receive Transaction Canceled
+    
     for obj in sess.dirty:
+        # Update When Receive Transaction Canceled
         if isinstance(obj, ReceiveHeader):
             # check if the update is cancel and The header is not cancel
             changes = get_model_changes(obj)
             for i in changes:
-                if i == 'status':
+                if i == 'docstatus':
                     if changes[i][1] == 'N':
-                        rec_row = ReceiveRow.query.filter_by(
-                            receive_id=obj.id).all()
+                        rec_row = ReceiveRow.query.filter_by(receive_id=obj.id).all()
                         for row in rec_row:
                             # add to inventory transaction the void transaction
                             inv_trans = InvTransaction(trans_id=obj.id, trans_num=obj.transnumber,
@@ -228,19 +245,36 @@ def insert_update(*args):
                                                        updated_by=obj.updated_by)
 
                             # deduct the canceled qty to whse
-                            whseinv = WhseInv.query.filter_by(warehouse=obj.to_whse,
-                                                              item_code=obj.item_code).first()
-                            whseinv.quantity -= obj.actualrec
+                            whseinv = WhseInv.query.filter_by(warehouse=row.to_whse,
+                                                              item_code=row.item_code).first()
+                            whseinv.quantity -= row.actualrec
 
                             row.status = 2
 
-                            db.session.add_all([inv_trans, whseinv, row])
-                            
+                            db.session.add(inv_trans)
+                        
+                        # Update the SAP IT Table When Cancel
+                        if obj.transtype == 'SAPIT':
+                            it_header = ITHeader.query.filter(ITHeader.docnum == obj.sap_number).first()
+                            it_header.docstatus = 'O'
+                            it_row = ITRow.query.filter(ITRow.docnum == obj.sap_number).all()
+                            for i in it_row:
+                                i.actual_rec = None
 
+                        # Update the SAP PO Table When Cancel
+                        if obj.transtype == 'SAPPO':
+                            po_header = POHeader.query.filter(POHeader.docnum == obj.sap_number).first()
+                            po_header.docstatus = 'O'
+                            po_row = PORow.query.filter(PORow.docnum == obj.sap_number).all()
+                            for i in po_row:
+                                i.actual_rec = None
+                            
+        
+        # Update if the Transfer is Canceled
         if isinstance(obj, TransferHeader):
             changes = get_model_changes(obj)
             for i in changes:
-                if i == 'status':
+                if i == 'docstatus':
                     if changes[i][1] == 'N':
                         trans_row = TransferHeader.query.filter_by(
                             transfer_id=obj.id).all()
@@ -257,13 +291,13 @@ def insert_update(*args):
                                                        updated_by=obj.updated_by)
 
                             # deduct the canceled qty to whse
-                            whseinv = WhseInv.query.filter_by(warehouse=obj.from_whse,
-                                                              item_code=obj.item_code).first()
-                            whseinv.quantity += obj.actualrec
+                            whseinv = WhseInv.query.filter_by(warehouse=row.from_whse,
+                                                              item_code=row.item_code).first()
+                            whseinv.quantity += row.actualrec
 
                             row.status = 2
 
-                            db.session.add_all([inv_trans, whseinv, row])
+                            db.session.add(inv_trans)
 
         else:
             continue

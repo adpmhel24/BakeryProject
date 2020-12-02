@@ -13,7 +13,7 @@ from bakery_app.users.routes import token_required
 from bakery_app.items.models import PriceListRow, Items
 
 from .models import (TransferHeader, TransferRow, ReceiveHeader, ReceiveRow,
-                     WhseInv)
+                     WhseInv, ITRow, ITHeader, POHeader, PORow)
 from .inv_schema import (TransferHeaderSchema, ReceiveHeaderSchema,
                          WhseInvSchema)
 
@@ -112,6 +112,7 @@ def create_transfer(curr_user):
         db.session.close()
 
 
+
 # Get All Transfer
 @inventory.route('/api/inv/trfr/getall')
 @token_required
@@ -122,6 +123,8 @@ def get_all_transfer(curr_user):
         date = ''
         user_filt = []
         filt = []
+        whse_filt = []
+        row_filt = []
 
         for k, v in data.items():
             if k == 'transdate':
@@ -135,25 +138,34 @@ def get_all_transfer(curr_user):
                     filt.append((k, "==", v))
                 else:
                     filt.append((k, "==", None))
+            elif 'branch' == k and v:
+                whse_filt.append((k, "==", v))
+            elif 'from_whse' == k and v:
+                row_filt.append((k, "==", v))
+            elif 'to_whse' == k and v:
+                row_filt.append((k, "==", v))
             else:
                 if v:
                     filt.append((k, "==", v))
 
         user_filters = BaseQuery.create_query_filter(User, filters={'and': user_filt})
+        row_filters = BaseQuery.create_query_filter(TransferRow, filters={'and': row_filt})
         trans_filters = BaseQuery.create_query_filter(TransferHeader, filters={'and': filt})
-        if date:
-            trans_filters.append((func.cast(ReceiveHeader.transdate, DATE) == date))
+        whse_filters = BaseQuery.create_query_filter(Warehouses, filters={"and": whse_filt})
 
-        transfer = db.session.query(TransferHeader
-                                    ).filter(
-            and_(or_(TransferRow.from_whse == curr_user.whse,
-                     TransferRow.to_whse == curr_user.whse),
+        if date:
+            trans_filters.append((func.cast(TransferHeader.transdate, DATE) == date))
+
+        transfer = db.session.query(TransferHeader).\
+            select_from(TransferHeader).\
+            join(TransferRow, TransferRow.transfer_id == TransferHeader.id).\
+            join(Warehouses, Warehouses.whsecode == TransferRow.to_whse).\
+            outerjoin(User, TransferHeader.created_by == User.id).\
+            filter(and_(
                  *trans_filters,
                  *user_filters,
-                 func.cast(TransferHeader.transdate, DATE) == date)
-        ).outerjoin(
-            User, TransferHeader.id == User.id
-        ).all()
+                 *row_filters,
+                 *whse_filters)).all()
 
         trans_schema = TransferHeaderSchema(many=True, only=("id", "transnumber", "sap_number",
                                                              "transdate", "remarks", "docstatus", "reference"))
@@ -305,6 +317,13 @@ def create_receive(curr_user):
         # add 1 to series next num
         series.next_num += 1
 
+        it = ITHeader.query.filter(and_(ITHeader.docnum == r_h.sap_number, 
+                                        ITHeader.docstatus.in_(['C', 'N']))).first()
+        if it:
+            if it.docstatus == 'C':
+                raise Exception("Document is already closed!")
+            raise Exception("Document is already canceled!")
+
         db.session.add_all([r_h, series])
         db.session.flush()
 
@@ -410,12 +429,13 @@ def create_receive(curr_user):
                 row['to_whse'] = curr_user.whse
                 check = Check(**row)
                 # check if valid
+                if r_h.type2.upper() == 'SAPIT':
+                    if not check.fromwhse_exist():
+                        raise Exception("Invalid from whse code!")
                 if not check.itemcode_exist():
                     raise Exception("Invalid item code!")
                 elif not check.uom_exist():
                     raise Exception("Invalid uom!")
-                elif not check.fromwhse_exist():
-                    raise Exception("Invalid from whse code!")
                 elif not check.towhse_exist():
                     raise Exception("Invalid from whse code!")
                 if row['to_whse'] != curr_user.whse:
@@ -426,6 +446,19 @@ def create_receive(curr_user):
                                  sap_number=r_h.sap_number, objtype=r_h.objtype, **row)
 
                 db.session.add(r_r)
+        
+        # Check and Update docstatus of SAP IT Table
+        if r_h.transtype == 'SAPIT':
+            it_header = ITHeader.query.filter(and_(ITHeader.docnum == r_h.sap_number, 
+                                                ITRow.actual_rec != None,
+                                                ITHeader.docstatus == 'O')).first()
+            it_header.docstatus = 'C'
+        # Check and Update docstatus of SAP PO table
+        if r_h.transtype == 'SAPPO':
+            po_header = POHeader.query.filter(and_(POHeader.docnum == r_h.sap_number, 
+                                                PORow.actual_rec != None,
+                                                POHeader.docstatus == 'O')).first()
+            po_header.docstatus = 'C'
 
         db.session.commit()
         recv_schema = ReceiveHeaderSchema(only=("id", "series", "seriescode", "transnumber",
@@ -454,6 +487,8 @@ def get_all_recv(curr_user):
         data = request.args.to_dict()
         date = ''
         filt = []
+        row_filt = []
+        whse_filt = []
 
         for k, v in data.items():
             if k == 'transdate':
@@ -464,21 +499,31 @@ def get_all_recv(curr_user):
                     filt.append((k, '==', None))
                 elif v:
                     filt.append((k, '==', v))
+            elif 'branch' == k and v:
+                whse_filt.append((k, "==", v))
+            elif 'from_whse' == k and v:
+                row_filt.append((k, "==", v))
+            elif 'to_whse' == k and v:
+                row_filt.append((k, "==", v))
             else:
                 if v:
                     filt.append((k, "==", v))
 
         rec_filters = BaseQuery.create_query_filter(ReceiveHeader, filters={'and': filt})
+        row_filters = BaseQuery.create_query_filter(ReceiveRow, filters={'and': row_filt})
+        whse_filters = BaseQuery.create_query_filter(Warehouses, filters={"and": whse_filt})
+
         if date:
             rec_filters.append((func.cast(ReceiveHeader.transdate, DATE) == date))
-        receive = db.session.query(ReceiveHeader).filter(
-            and_(or_(ReceiveRow.from_whse == curr_user.whse,
-                     ReceiveRow.to_whse == curr_user.whse),
-                 *rec_filters,
-                 )
-        ).outerjoin(
-            User, ReceiveHeader.id == User.id
-        ).all()
+
+        receive = db.session.query(ReceiveHeader).\
+            select_from(ReceiveHeader).\
+            join(ReceiveRow, ReceiveRow.receive_id == ReceiveHeader.id).\
+            join(Warehouses, ReceiveRow.to_whse == Warehouses.whsecode).\
+            filter(and_(*rec_filters,
+                        *row_filters,
+                        *whse_filters)).\
+            all()
 
         recv_schema = ReceiveHeaderSchema(many=True, only=("id", "series", "seriescode", "transnumber",
                                                            "sap_number", "docstatus", "transtype", "transdate",
@@ -519,7 +564,7 @@ def get_recv_details(curr_user, id):
 
 
 # Cancel Receive
-@inventory.route('/api/inv/recv/cancel/<int:id>')
+@inventory.route('/api/inv/recv/cancel/<int:id>', methods=['PUT'])
 @token_required
 def cancel_recv(curr_user, id):
     if not curr_user.is_admin():
@@ -542,7 +587,7 @@ def cancel_recv(curr_user, id):
         receive.date_updated = datetime.now()
         db.session.commit()
 
-        return ResponseMessage(True, message='Successfully canceled!')
+        return ResponseMessage(True, message='Successfully canceled!').resp()
     except (pyodbc.IntegrityError, exc.IntegrityError) as err:
         return ResponseMessage(False, message=f"{err}").resp(), 500
     except Exception as err:
@@ -640,7 +685,8 @@ def get_inventory_report_per_whse(curr_user):
             SET @todate = '{}'
             
             SELECT x.*
-            , x.[Beginning] + x.[Received] + x.AdjIn - x.AdjOut - x.[Transferred] - x.PullOut - x.[Sold] [Available]
+            , x.[Beginning] + x.[Received] + x.TransferIn + x.AdjIn [TotalIn]
+            , x.[Beginning] + x.[Received] + x.TransferIn + x.AdjIn - x.AdjOut - x.[Transferred] - x.PullOut - x.[Sold] [Available]
             FROM(
             SELECT 
                 a1.item_code,
@@ -650,10 +696,17 @@ def get_inventory_report_per_whse(curr_user):
                     and (@whse IS NULL OR T1.warehouse = @whse) and (@branch IS NULL or T2.branch = @branch)
                     and (@fromdate IS NULL OR T1.transdate < @fromdate)
                     ),0) [Beginning],
-                SUM(ISNULL(CASE WHEN a1.objtype = 2 and (@fromdate IS NULL OR CAST(a1.transdate as DATE) >= @fromdate) 
+
+                SUM(ISNULL(CASE WHEN a1.objtype = 2 and a3.transtype != 'TRFR' and (@fromdate IS NULL OR CAST(a1.transdate as DATE) >= @fromdate) 
             and (@todate IS NULL OR CAST(a1.transdate as DATE) <= @todate) 
                     THEN a1.inqty - a1.outqty
                     END,0)) [Received],
+
+				SUM(ISNULL(CASE WHEN a1.objtype = 2 and a3.transtype = 'TRFR' and (@fromdate IS NULL OR CAST(a1.transdate as DATE) >= @fromdate) 
+            and (@todate IS NULL OR CAST(a1.transdate as DATE) <= @todate) 
+                    THEN a1.inqty - a1.outqty
+                    END,0)) [TransferIn],
+
 				SUM(ISNULL(CASE WHEN a1.objtype = 9 and (@fromdate IS NULL OR CAST(a1.transdate as DATE) >= @fromdate) 
             and (@todate IS NULL OR CAST(a1.transdate as DATE) <= @todate) 
                     THEN a1.inqty - a1.outqty
@@ -669,7 +722,7 @@ def get_inventory_report_per_whse(curr_user):
 				SUM(ISNULL(CASE WHEN a1.objtype = 11 and (@fromdate IS NULL OR CAST(a1.transdate as DATE) >= @fromdate) 
             and (@todate IS NULL OR CAST(a1.transdate as DATE) <= @todate) 
                     THEN a1.outqty - a1.inqty
-                    END,0)) [PullOut],	
+                    END,0)) [PullOut],
                 SUM(ISNULL(CASE WHEN a1.objtype = 3 and (@fromdate IS NULL OR CAST(a1.transdate as DATE) >= @fromdate) 
             and (@todate IS NULL OR CAST(a1.transdate as DATE) <= @todate) 
                     THEN  a1.outqty - a1.inqty
@@ -677,6 +730,7 @@ def get_inventory_report_per_whse(curr_user):
             
             FROM tblwhstransaction a1 
             inner join tblwhses a2 on a1.warehouse = a2.whsecode
+			left join tblreceive a3 on a1.objtype = a3.objtype and a1.trans_id = a3.id
             where (@branch IS NULL OR branch = @branch)
             and (@whse IS NULL OR warehouse = @whse)
             GROUP BY a1.item_code)x"""

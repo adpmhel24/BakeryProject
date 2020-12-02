@@ -74,7 +74,7 @@ class PullOutRow(db.Model):
                            nullable=False)
     whsecode = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode',
                                                        ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
-    to_whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode'), nullable=False)
+    to_whse = db.Column(db.String(100), db.ForeignKey('tblwhses.whsecode'), nullable=False) # pullout destination
     item_code = db.Column(db.String(100), db.ForeignKey('tblitems.item_code'))
     objtype = db.Column(db.Integer, nullable=False)
     quantity = db.Column(db.Float, nullable=False, default=0.00)

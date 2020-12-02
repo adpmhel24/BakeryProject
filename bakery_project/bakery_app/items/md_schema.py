@@ -14,10 +14,17 @@ class ItemsSchema(ma.SQLAlchemySchema):
     uom = ma.auto_field()
     min_stock = ma.auto_field()
     max_stock = ma.auto_field()
-    price = ma.auto_field()
     date_created = ma.auto_field()
     date_updated = ma.auto_field()
+    price = ma.Number()
 
+    def dump(self, *args, **kwargs):
+        special = kwargs.pop('special', None)
+        _partial = super(ItemsSchema, self).dump(*args, **kwargs)
+        if special is not None and all(f in _partial for f in special):
+            for field in special:
+                _partial['_{}'.format(field)] = _partial.pop(field)
+        return _partial
 
 class ItemGroupSchema(ma.SQLAlchemySchema):
     class Meta:

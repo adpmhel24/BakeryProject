@@ -6,6 +6,7 @@ class CustomerSchema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = Customer
         ordered = True
+        include_fk = True
 
 
 class CustTypeSchema(ma.SQLAlchemyAutoSchema):

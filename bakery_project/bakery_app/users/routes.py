@@ -124,6 +124,9 @@ def get_all_users(curr_user):
         elif k == 'branch':
             if v:
                 filt.append((k, '==', v))
+        elif k == 'whse':
+            if v:
+                filt.append((k, '==', v))
         else:
             filt.append((k, '==', bool(int(v))))
     try:
